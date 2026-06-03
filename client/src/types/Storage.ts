@@ -1,10 +1,12 @@
 import type { Encrypted } from "./Crypt";
 
-export interface StorageAdapter<T> {
-  load(): T;
-  save(state: T): void;
-  remove(key: keyof T): void;
-  clear(): void;
+type MaybePromise<T> = T | Promise<T>;
+
+export interface StorageAdapter<T extends object> {
+  load(): MaybePromise<T>;
+  save(state: T): MaybePromise<void>;
+  remove(key: keyof T): MaybePromise<void>;
+  clear(): MaybePromise<void>;
 }
 
 export interface StorageData {

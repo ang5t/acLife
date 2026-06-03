@@ -7,6 +7,7 @@ import {
   useMemo,
   useContext,
   useCallback,
+  useEffect,
 } from "react";
 
 interface StorageContextValue<T extends object> {
@@ -16,23 +17,44 @@ interface StorageContextValue<T extends object> {
 
 export function createStorageContext<T extends object>(
   adapter: StorageAdapter<T>,
+  defaults: T,
 ) {
   const Context = createContext<StorageContextValue<T> | undefined>(undefined);
 
   function StorageProvider({ children }: WithChildren) {
-    const [data, setData] = useState<T>(() => adapter.load());
+    const [data, setData] = useState<T>(defaults);
+
+    useEffect(() => {
+      let cancelled = false;
+
+      Promise.resolve(adapter.load())
+        .then((loaded) => {
+          if (!cancelled) {
+            setData(loaded);
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to load storage data:", error);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, []);
 
     const get = useCallback(
-      <K extends keyof T>(key: K): T[K] => {
-        return data[key];
-      },
+      <K extends keyof T>(key: K): T[K] => data[key],
       [data],
     );
 
     const set = useCallback(<K extends keyof T>(key: K, value: T[K]) => {
       setData((prev) => {
         const next = { ...prev, [key]: value };
-        adapter.save(next);
+
+        Promise.resolve(adapter.save(next)).catch((error) => {
+          console.error("Failed to save storage data:", error);
+        });
+
         return next;
       });
     }, []);
@@ -42,7 +64,15 @@ export function createStorageContext<T extends object>(
     return <Context.Provider value={value}>{children}</Context.Provider>;
   }
 
-  const useStorage = () => useContext(Context);
+  const useStorage = () => {
+    const context = useContext(Context);
+
+    if (!context) {
+      throw new Error("useStorage must be used within a StorageProvider");
+    }
+
+    return context;
+  };
 
   return { StorageProvider, useStorage };
 }
@@ -59,4 +89,5 @@ const defaults: StorageData = {
 export const { StorageProvider, useStorage } =
   createStorageContext<StorageData>(
     indexedDBAdapter("acLife", "acl_data", defaults),
+    defaults,
   );

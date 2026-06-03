@@ -18,7 +18,7 @@ export function indexedDBAdapter<T extends object>(
       request.onerror = () => reject(request.error);
     });
 
-  const putItem = async (db: IDBDatabase, value: T) =>
+  const putItem = (db: IDBDatabase, value: T) =>
     new Promise<void>((resolve, reject) => {
       const tx = db.transaction(storeName, "readwrite");
       const store = tx.objectStore(storeName);
@@ -27,7 +27,7 @@ export function indexedDBAdapter<T extends object>(
       tx.onerror = () => reject(tx.error);
     });
 
-  const getItem = async (db: IDBDatabase): Promise<T | null> =>
+  const getItem = (db: IDBDatabase): Promise<T | null> =>
     new Promise((resolve, reject) => {
       const tx = db.transaction(storeName, "readonly");
       const store = tx.objectStore(storeName);
@@ -36,7 +36,7 @@ export function indexedDBAdapter<T extends object>(
       request.onerror = () => reject(request.error);
     });
 
-  const removeItem = async (db: IDBDatabase) =>
+  const removeItem = (db: IDBDatabase) =>
     new Promise<void>((resolve, reject) => {
       const tx = db.transaction(storeName, "readwrite");
       const store = tx.objectStore(storeName);
@@ -46,22 +46,25 @@ export function indexedDBAdapter<T extends object>(
     });
 
   return {
-    load() {
-      openDB().then((db) =>
-        getItem(db).then((res) => {
-          if (res) Object.assign(initial, res);
-        }),
-      );
-      return initial;
+    async load(): Promise<T> {
+      const db = await openDB();
+      return (await getItem(db)) ?? initial;
     },
-    save(state) {
-      openDB().then((db) => putItem(db, state));
+    async save(state: T): Promise<void> {
+      const db = await openDB();
+      await putItem(db, state);
     },
-    remove() {
-      openDB().then((db) => removeItem(db));
+    async remove(key: keyof T): Promise<void> {
+      const db = await openDB();
+      const current = (await getItem(db)) ?? initial;
+
+      delete current[key];
+
+      await putItem(db, current);
     },
-    clear() {
-      openDB().then((db) => removeItem(db));
+    async clear(): Promise<void> {
+      const db = await openDB();
+      await removeItem(db);
     },
   };
 }
