@@ -217,25 +217,11 @@ func SubscriptionMiddleware() mux.MiddlewareFunc {
 // TimeoutMiddleware sets a timeout for the request.
 func TimeoutMiddleware(d time.Duration) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx, cancel := context.WithTimeout(r.Context(), d)
-			defer cancel()
-
-			done := make(chan struct{})
-			go func() {
-				next.ServeHTTP(w, r.WithContext(ctx))
-				close(done)
-			}()
-
-			select {
-			case <-done:
-				return
-			case <-ctx.Done():
-				if ctx.Err() == context.DeadlineExceeded {
-					Timeout(w, r)
-				}
-			}
-		})
+		return http.TimeoutHandler(
+			next,
+			d,
+			"request timed out",
+		)
 	}
 }
 
