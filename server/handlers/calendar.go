@@ -64,7 +64,7 @@ func SaveCalendarEvents(w http.ResponseWriter, r *http.Request) {
 
 			if len(decoded) > constants.MaxEventLen {
 				utils.SendBadRequest(w)
-				continue
+				return
 			}
 
 			upserts = append(upserts, types.CalendarEvent{
