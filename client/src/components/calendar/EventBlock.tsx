@@ -97,6 +97,7 @@ export default memo(
         height: style.height,
         width: style.width + "%",
         backgroundColor: eventColor,
+        contain: "paint" as const,
       }),
       [style.top, style.left, style.height, style.width, eventColor],
     );
@@ -265,7 +266,7 @@ export default memo(
           <ContextMenuTrigger onPointerDown={preventTouch} disabled={isMobile}>
             {/* visible event block */}
             <div
-              className={`pointer-events-auto event-block ${padding} absolute left-0 right-0 z-10 text-xs ${textColor} cursor-pointer select-none overflow-hidden shadow-[inset_0_0_2px_rgba(0,0,0,0.35)] ${isHeld ? "scale-[1.03] shadow-lg ring-2 ring-white/80 z-30" : ""} transition-transform`}
+              className={`pointer-events-auto event-block ${padding} absolute left-0 right-0 z-10 text-xs ${textColor} cursor-pointer select-none overflow-hidden shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)] ${isHeld ? "scale-[1.03] shadow-lg ring-2 ring-white/80 z-30 transition-transform" : ""}`}
               style={blockStyle}
               onPointerDown={useCallback(
                 (e: React.PointerEvent) => {

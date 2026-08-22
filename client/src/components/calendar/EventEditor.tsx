@@ -8,6 +8,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { Field, FieldLabel } from "../ui/field";
@@ -282,7 +283,7 @@ export default function EventEditor({
     newEvent.current.timestamp = Date.now();
   }, [title, description, color, start, end, repeat]);
 
-  return (
+  return createPortal(
     <div
       className="pointer-events-auto event-editor fixed z-20 left-0 top-0 flex flex-col justify-center md:block bg-card/80 backdrop-blur-[10px] p-3 px-5 md:px-3 shadow-lg border md:rounded-lg w-full h-full md:w-auto md:h-auto"
       style={{
@@ -540,6 +541,7 @@ export default function EventEditor({
           <Button onClick={handleSave}>Save</Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

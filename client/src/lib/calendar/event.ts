@@ -38,11 +38,19 @@ export function getEventPixelPosition(
   } as PositionedEvent;
 }
 
+const dayStylesCache = new WeakMap<
+  CalendarEvent[],
+  { hourHeight: number; result: Record<string, EventStyle> }
+>();
+
 export const getDayEventStyles = (
   events: CalendarEvent[],
   day: DateTime,
   hourHeight: number,
 ): Record<string, EventStyle> => {
+  const cached = dayStylesCache.get(events);
+  if (cached && cached.hourHeight === hourHeight) return cached.result;
+
   // map events to positions
   const positioned: PositionedEvent[] = events
     .map((ev) => getEventPixelPosition(ev, day, hourHeight))
@@ -121,6 +129,8 @@ export const getDayEventStyles = (
       left: ev.col * width,
     };
   }
+
+  dayStylesCache.set(events, { hourHeight, result: styles });
 
   return styles;
 };
@@ -203,30 +213,21 @@ function processRepeats(
   }
 }
 
-type EventMapCache = {
+type BaseEventMapCache = {
   events?: CalendarEvent[];
   dates?: DateTime[];
-  exclude?: string[];
-  append?: CalendarEvent[];
   result?: Map<string, CalendarEvent[]>;
 };
 
-const eventMapCache: EventMapCache = {};
+const baseEventMapCache: BaseEventMapCache = {};
 
-export function getEventMap(
-  events: CalendarEvent[],
-  dates: DateTime[],
-  exclude: string[],
-  append: CalendarEvent[],
-) {
+function getBaseEventMap(events: CalendarEvent[], dates: DateTime[]) {
   if (
-    eventMapCache.result &&
-    eventMapCache.events === events &&
-    eventMapCache.dates === dates &&
-    eventMapCache.exclude === exclude &&
-    eventMapCache.append === append
+    baseEventMapCache.result &&
+    baseEventMapCache.events === events &&
+    baseEventMapCache.dates === dates
   ) {
-    return eventMapCache.result;
+    return baseEventMapCache.result;
   }
 
   const map = new Map<string, CalendarEvent[]>();
@@ -236,28 +237,69 @@ export function getEventMap(
     visibleDates.add(d.toISODate()!);
   }
 
-  const excludeSet = new Set(exclude);
+  const noExclusions = new Set<string>();
   const lastVisibleDayEnd = dates[dates.length - 1].endOf("day");
 
   for (const e of events) {
     if (!e.id) continue;
 
-    if (!excludeSet.has(e.id)) mapEventToDates(map, e, visibleDates);
-    processRepeats(map, e, visibleDates, lastVisibleDayEnd, excludeSet);
-  }
-
-  for (const e of append) {
-    if (!e.id) continue;
-
     mapEventToDates(map, e, visibleDates);
-    processRepeats(map, e, visibleDates, lastVisibleDayEnd, excludeSet);
+    processRepeats(map, e, visibleDates, lastVisibleDayEnd, noExclusions);
   }
 
-  eventMapCache.events = events;
-  eventMapCache.dates = dates;
-  eventMapCache.exclude = exclude;
-  eventMapCache.append = append;
-  eventMapCache.result = map;
+  baseEventMapCache.events = events;
+  baseEventMapCache.dates = dates;
+  baseEventMapCache.result = map;
+
+  return map;
+}
+
+export function getEventMap(
+  events: CalendarEvent[],
+  dates: DateTime[],
+  exclude: string[],
+  append: CalendarEvent[],
+) {
+  const base = getBaseEventMap(events, dates);
+
+  if (exclude.length === 0 && append.length === 0) return base;
+
+  const excludeSet = new Set(exclude);
+  const map = new Map<string, CalendarEvent[]>();
+
+  for (const [key, dayEvents] of base) {
+    const hasExcluded =
+      excludeSet.size > 0 &&
+      dayEvents.some((e) => excludeSet.has(e._instanceId ?? e.id));
+
+    map.set(
+      key,
+      hasExcluded
+        ? dayEvents.filter((e) => !excludeSet.has(e._instanceId ?? e.id))
+        : dayEvents,
+    );
+  }
+
+  if (append.length > 0) {
+    const visibleDates = new Set<string>();
+    for (const d of dates) {
+      visibleDates.add(d.toISODate()!);
+    }
+    const lastVisibleDayEnd = dates[dates.length - 1].endOf("day");
+
+    const additions = new Map<string, CalendarEvent[]>();
+    for (const e of append) {
+      if (!e.id) continue;
+
+      mapEventToDates(additions, e, visibleDates);
+      processRepeats(additions, e, visibleDates, lastVisibleDayEnd, excludeSet);
+    }
+
+    for (const [key, added] of additions) {
+      const existing = map.get(key);
+      map.set(key, existing ? [...existing, ...added] : added);
+    }
+  }
 
   return map;
 }
