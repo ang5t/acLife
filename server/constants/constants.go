@@ -4,6 +4,7 @@ package constants
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"acLife/types"
@@ -24,8 +25,6 @@ const (
 	SubCacheTTL       = 5 * time.Minute
 	RateLimitCacheTTL = 2 * time.Minute
 
-	AccessTokenExpiry = 7 * Day
-
 	DBMaxOpenConns    = 50
 	DBMaxIdleConns    = 10
 	DBConnMaxLifetime = 1 * time.Hour
@@ -38,11 +37,23 @@ const (
 	MaxEventLen     = 10000
 )
 
+// AccessTokenExpiry set in init: ACCESS_TOKEN_EXPIRY_DAYS env var if present, else default 3 days.
+var AccessTokenExpiry time.Duration
+
 var Metadata types.ServerMetadata
 
 func init() {
 	if err := godotenv.Load(); err != nil {
 		log.Fatalf("Failed to load .env: %v", err)
+	}
+
+	AccessTokenExpiry = 3 * Day
+	if v := os.Getenv("ACCESS_TOKEN_EXPIRY_DAYS"); v != "" {
+		if days, err := strconv.Atoi(v); err == nil && days > 0 {
+			AccessTokenExpiry = time.Duration(days) * Day
+		} else {
+			log.Printf("Invalid ACCESS_TOKEN_EXPIRY_DAYS %q, using default", v)
+		}
 	}
 
 	Metadata = types.ServerMetadata{
