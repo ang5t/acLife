@@ -7,17 +7,39 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "../ui/context-menu";
-import { Clipboard, CopyIcon, PencilLine, RedoDot, Trash2 } from "lucide-react";
+import {
+  Clipboard,
+  CopyIcon,
+  MoveIcon,
+  PencilLine,
+  RedoDot,
+  Trash2,
+} from "lucide-react";
 import useTapInteraction from "@/hooks/useTapInteraction";
 import { useCalendar } from "@/context/CalendarContext";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { findFreeSlot } from "@/lib/calendar/freeSpace";
+import { toast } from "sonner";
 
 // how long (ms) a touch must be held roughly still before it starts a drag
 const LONG_PRESS_MS = 450;
 // how far (px) a touch may move during the hold before it's treated as a scroll/tap instead
 const LONG_PRESS_TOLERANCE = 10;
+
+const MOVE_MINUTE_STEPS = [5, 10, 15, 30];
+const MOVE_HOUR_STEPS = [1, 2, 3, 4, 5, 8];
+const MOVE_UNIT_STEPS: { label: string; unit: "days" | "weeks" | "months" | "years" }[] = [
+  { label: "Day", unit: "days" },
+  { label: "Week", unit: "weeks" },
+  { label: "Month", unit: "months" },
+  { label: "Year", unit: "years" },
+];
 
 export default memo(
   function EventBlock({
@@ -31,7 +53,7 @@ export default memo(
     onEventDelete,
     onDuplicate,
   }: EventBlockProps) {
-    const { setEditingEvent } = useCalendar();
+    const { setEditingEvent, calendarEvents } = useCalendar();
     const isMobile = useIsMobile();
 
     const { startsToday, endsToday } = useMemo(
@@ -198,6 +220,42 @@ export default memo(
       onDuplicate(event);
     }, [event, onDuplicate]);
 
+    const moveEvent = useCallback(
+      (
+        direction: "forward" | "backward",
+        unit: "minutes" | "hours" | "days" | "weeks" | "months" | "years",
+        amount: number,
+      ) => {
+        const delta = direction === "forward" ? amount : -amount;
+        const newEvent = {
+          ...event,
+          start: event.start.plus({ [unit]: delta }),
+          end: event.end.plus({ [unit]: delta }),
+        };
+        onEventEdit(event, newEvent);
+      },
+      [event, onEventEdit],
+    );
+
+    const moveToFreeSpace = useCallback(
+      (direction: "forward" | "backward") => {
+        const slot = findFreeSlot(calendarEvents, event, direction);
+
+        if (!slot) {
+          toast.error("No free slot found");
+          return;
+        }
+
+        onEventEdit(event, { ...event, start: slot.start, end: slot.end });
+
+        const sameDay = slot.start.hasSame(slot.end, "day");
+        toast.success(
+          `Moved to ${slot.start.toFormat("EEE, MMM d, h:mm a")} - ${slot.end.toFormat(sameDay ? "h:mm a" : "EEE, MMM d, h:mm a")}`,
+        );
+      },
+      [event, calendarEvents, onEventEdit],
+    );
+
     return (
       <>
         <ContextMenu>
@@ -283,6 +341,96 @@ export default memo(
               <CopyIcon />
               Duplicate
             </ContextMenuItem>
+
+            <ContextMenuSub>
+              <ContextMenuSubTrigger className="gap-2">
+                <MoveIcon />
+                Move...
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>Forward...</ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    {MOVE_MINUTE_STEPS.map((minutes) => (
+                      <ContextMenuItem
+                        key={`fwd-min-${minutes}`}
+                        onClick={() => moveEvent("forward", "minutes", minutes)}
+                      >
+                        {minutes} minutes
+                      </ContextMenuItem>
+                    ))}
+                    {MOVE_HOUR_STEPS.map((hours) => (
+                      <ContextMenuItem
+                        key={`fwd-hour-${hours}`}
+                        onClick={() => moveEvent("forward", "hours", hours)}
+                      >
+                        {hours} hour{hours > 1 ? "s" : ""}
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>Backward...</ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    {MOVE_MINUTE_STEPS.map((minutes) => (
+                      <ContextMenuItem
+                        key={`bwd-min-${minutes}`}
+                        onClick={() => moveEvent("backward", "minutes", minutes)}
+                      >
+                        {minutes} minutes
+                      </ContextMenuItem>
+                    ))}
+                    {MOVE_HOUR_STEPS.map((hours) => (
+                      <ContextMenuItem
+                        key={`bwd-hour-${hours}`}
+                        onClick={() => moveEvent("backward", "hours", hours)}
+                      >
+                        {hours} hour{hours > 1 ? "s" : ""}
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>Next...</ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    {MOVE_UNIT_STEPS.map(({ label, unit }) => (
+                      <ContextMenuItem
+                        key={`next-${unit}`}
+                        onClick={() => moveEvent("forward", unit, 1)}
+                      >
+                        {label}
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>Previous...</ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    {MOVE_UNIT_STEPS.map(({ label, unit }) => (
+                      <ContextMenuItem
+                        key={`prev-${unit}`}
+                        onClick={() => moveEvent("backward", unit, 1)}
+                      >
+                        {label}
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+
+                <ContextMenuSeparator />
+
+                <ContextMenuItem onClick={() => moveToFreeSpace("forward")}>
+                  Next free slot
+                </ContextMenuItem>
+
+                <ContextMenuItem onClick={() => moveToFreeSpace("backward")}>
+                  Previous free slot
+                </ContextMenuItem>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
 
             <ContextMenuItem onClick={handleDelete}>
               <Trash2 /> Delete
