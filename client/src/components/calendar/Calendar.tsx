@@ -185,6 +185,9 @@ export default function AppCalendar({
       const state = dragRef.current;
       if (!state || e.pointerId !== state.pointerId) return;
 
+      // stop the page from scrolling while dragging an event on a touch screen
+      if (e.pointerType === "touch" && e.cancelable) e.preventDefault();
+
       const container = gridRef.current;
       if (!container) return;
 
@@ -330,12 +333,7 @@ export default function AppCalendar({
       event: CalendarEvent,
       dayIndex: number,
     ) => {
-      if (e.pointerType === "touch") {
-        e.stopPropagation();
-        return;
-      }
-
-      if (e.button !== 0) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
 
       const container = gridRef.current;
       if (!container) return;

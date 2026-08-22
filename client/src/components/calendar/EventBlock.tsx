@@ -1,6 +1,6 @@
 import { isColorDark, shallowEqual } from "@/lib/utils";
 import type { EventBlockProps } from "@/types/Props";
-import { useRef, memo, useMemo, useCallback } from "react";
+import { useRef, memo, useMemo, useCallback, useEffect, useState } from "react";
 import EventEditor from "./EventEditor";
 import {
   ContextMenu,
@@ -12,6 +12,12 @@ import {
 import { Clipboard, CopyIcon, PencilLine, RedoDot, Trash2 } from "lucide-react";
 import useTapInteraction from "@/hooks/useTapInteraction";
 import { useCalendar } from "@/context/CalendarContext";
+import { useIsMobile } from "@/hooks/use-mobile";
+
+// how long (ms) a touch must be held roughly still before it starts a drag
+const LONG_PRESS_MS = 450;
+// how far (px) a touch may move during the hold before it's treated as a scroll/tap instead
+const LONG_PRESS_TOLERANCE = 10;
 
 export default memo(
   function EventBlock({
@@ -26,6 +32,7 @@ export default memo(
     onDuplicate,
   }: EventBlockProps) {
     const { setEditingEvent } = useCalendar();
+    const isMobile = useIsMobile();
 
     const { startsToday, endsToday } = useMemo(
       () => ({
@@ -57,6 +64,14 @@ export default memo(
       () => ({
         top: style.top,
         left: style.left + "%",
+        // stop mobile browsers from popping up their own text-selection/
+        // context-menu callout on the long-press used for hold-to-drag
+        WebkitTouchCallout: "none" as const,
+        WebkitUserSelect: "none" as const,
+        // touch-action must be set statically (not toggled once the drag
+        // starts) for browsers to reliably honor it instead of scrolling;
+        // scrolling can still be done by starting the touch on empty grid
+        touchAction: "none" as const,
         height: style.height,
         width: style.width + "%",
         backgroundColor: eventColor,
@@ -93,6 +108,88 @@ export default memo(
       if (e.pointerType === "touch") e.preventDefault();
     }, []);
 
+    // hold-to-drag support for touch screens: a touch must be held roughly
+    // still for LONG_PRESS_MS before it's treated as the start of a drag,
+    // otherwise it's left alone so tapping/scrolling keeps working normally
+    const [isHeld, setIsHeld] = useState(false);
+    const longPressRef = useRef<{
+      timer: number;
+      x: number;
+      y: number;
+      pointerId: number;
+      activated: boolean;
+    } | null>(null);
+
+    const cancelLongPress = useCallback(() => {
+      if (longPressRef.current) {
+        window.clearTimeout(longPressRef.current.timer);
+        longPressRef.current = null;
+      }
+      setIsHeld(false);
+    }, []);
+
+    useEffect(() => cancelLongPress, [cancelLongPress]);
+
+    const handleTouchPointerDown = useCallback(
+      (e: React.PointerEvent) => {
+        tapHandlers.onPointerDown(e);
+
+        const timer = window.setTimeout(() => {
+          const state = longPressRef.current;
+          if (!state) return;
+          state.activated = true;
+          setIsHeld(true);
+          navigator.vibrate?.(15);
+          onPointerDown(e, "move", event, day);
+        }, LONG_PRESS_MS);
+
+        longPressRef.current = {
+          timer,
+          x: e.clientX,
+          y: e.clientY,
+          pointerId: e.pointerId,
+          activated: false,
+        };
+      },
+      [tapHandlers, onPointerDown, event, day],
+    );
+
+    const handleTouchPointerMove = useCallback(
+      (e: React.PointerEvent) => {
+        tapHandlers.onPointerMove(e);
+
+        const state = longPressRef.current;
+        if (!state || state.activated || state.pointerId !== e.pointerId)
+          return;
+
+        // moved too far before the hold finished, treat this as a scroll/tap
+        if (
+          Math.abs(e.clientX - state.x) > LONG_PRESS_TOLERANCE ||
+          Math.abs(e.clientY - state.y) > LONG_PRESS_TOLERANCE
+        ) {
+          cancelLongPress();
+        }
+      },
+      [tapHandlers, cancelLongPress],
+    );
+
+    const handleTouchPointerUp = useCallback(
+      (e: React.PointerEvent) => {
+        // if the drag never activated, this was a normal tap release
+        if (!longPressRef.current?.activated) tapHandlers.onPointerUp(e);
+        cancelLongPress();
+      },
+      [tapHandlers, cancelLongPress],
+    );
+
+    const handleTouchPointerCancel = useCallback(
+      (e: React.PointerEvent) => {
+        tapHandlers.onPointerCancel(e);
+        cancelLongPress();
+      },
+      [tapHandlers, cancelLongPress],
+    );
+
     const stopPropagation = useCallback((e: React.PointerEvent) => {
       e.stopPropagation();
     }, []);
@@ -104,19 +201,27 @@ export default memo(
     return (
       <>
         <ContextMenu>
-          <ContextMenuTrigger onPointerDown={preventTouch}>
+          {/* long-press-to-open conflicts with hold-to-drag on touch, so the
+              context menu is only available on mobile via the "..." button
+              inside the event editor */}
+          <ContextMenuTrigger onPointerDown={preventTouch} disabled={isMobile}>
             {/* visible event block */}
             <div
-              className={`pointer-events-auto event-block ${padding} absolute left-0 right-0 z-10 text-xs ${textColor} cursor-pointer select-none overflow-hidden shadow-[inset_0_0_2px_rgba(0,0,0,0.35)]`}
+              className={`pointer-events-auto event-block ${padding} absolute left-0 right-0 z-10 text-xs ${textColor} cursor-pointer select-none overflow-hidden shadow-[inset_0_0_2px_rgba(0,0,0,0.35)] ${isHeld ? "scale-[1.03] shadow-lg ring-2 ring-white/80 z-30" : ""} transition-transform`}
               style={blockStyle}
               onPointerDown={useCallback(
                 (e: React.PointerEvent) => {
-                  if (e.pointerType === "touch") tapHandlers.onPointerDown(e);
+                  if (e.pointerType === "touch") handleTouchPointerDown(e);
                   else onPointerDown(e, "move", event, day);
                 },
-                [tapHandlers, day, event, onPointerDown],
+                [handleTouchPointerDown, day, event, onPointerDown],
               )}
-              onPointerUp={tapHandlers.onPointerUp}
+              onPointerMove={handleTouchPointerMove}
+              onPointerUp={handleTouchPointerUp}
+              onPointerCancel={handleTouchPointerCancel}
+              onContextMenu={(e) => {
+                if (isMobile) e.preventDefault();
+              }}
               onDoubleClick={() => setEditingEvent(event)}
               ref={eventRef}
             >

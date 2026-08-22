@@ -18,7 +18,13 @@ import { DateTimePicker } from "./DateTimePicker";
 import { DateTime } from "luxon";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { CopyIcon, Trash2Icon, XIcon } from "lucide-react";
+import { Clipboard, CopyIcon, MoreVerticalIcon, Trash2Icon, XIcon } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -124,6 +130,10 @@ export default function EventEditor({
     "#e5e5e5",
     "#141414",
   ];
+
+  const copyID = useCallback(() => {
+    navigator.clipboard.writeText(event._parent || event.id);
+  }, [event.id, event._parent]);
 
   const handleSave = useCallback(() => {
     // make sure dates are valid
@@ -284,9 +294,26 @@ export default function EventEditor({
     >
       <div className="flex justify-between mb-5 items-center">
         <h3 className="text-xl font-semibold">Edit Event</h3>
-        <Button variant="ghost" size="icon" onClick={onCancel}>
-          <XIcon />
-        </Button>
+        <div className="flex items-center gap-1">
+          {/* the context menu on the event block is disabled on mobile
+              (it conflicts with hold-to-drag), so expose it here instead */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden">
+                <MoreVerticalIcon />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={copyID}>
+                <Clipboard />
+                {event._parent ? "Copy parent ID" : "Copy ID"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="ghost" size="icon" onClick={onCancel}>
+            <XIcon />
+          </Button>
+        </div>
       </div>
       <form
         onSubmit={(e) => {
