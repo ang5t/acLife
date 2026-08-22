@@ -151,7 +151,7 @@ export default function LoginDialog() {
                   id="server"
                   type="url"
                   value={pendingServerURL}
-                  placeholder="https://ataraxis.codes/"
+                  placeholder="https://example.com/acLife/api/"
                   required
                   onChange={handleServerURLChange}
                   disabled={testing}
