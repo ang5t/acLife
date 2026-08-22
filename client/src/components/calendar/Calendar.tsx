@@ -45,6 +45,28 @@ import RecurringUpdateDialog from "./RecurringUpdateDialog";
 import type { PushEvent } from "@/types/Push";
 import { CLIENT_ID } from "@/hooks/calendar/useCalendarEvents";
 import { EMPTY_ARRAY } from "@/lib/constants";
+import type { RepeatInterval } from "@/types/calendar/Event";
+
+const repeatEqual = (a?: RepeatInterval, b?: RepeatInterval) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+
+  return (
+    a.interval === b.interval &&
+    a.unit === b.unit &&
+    a.until === b.until &&
+    (a.except?.join(",") ?? "") === (b.except?.join(",") ?? "") &&
+    (a.skip?.join(",") ?? "") === (b.skip?.join(",") ?? "")
+  );
+};
+
+const eventUnchanged = (a: CalendarEvent, b: CalendarEvent) =>
+  a.title === b.title &&
+  a.description === b.description &&
+  a.color === b.color &&
+  a.start.toMillis() === b.start.toMillis() &&
+  a.end.toMillis() === b.end.toMillis() &&
+  repeatEqual(a.repeat, b.repeat);
 
 /* -------------------------------------------------------------------------- */
 
@@ -368,6 +390,9 @@ export default function AppCalendar({
 
   const onEventEdit = useCallback(
     (originalEvent: CalendarEvent, event: CalendarEvent) => {
+      // nothing changed, so there's nothing to save
+      if (eventUnchanged(originalEvent, event)) return;
+
       if (event._parent || originalEvent.repeat) {
         evPendingUpdateRef.current = event;
         setUpdateRepeatDialogOpen(true);
