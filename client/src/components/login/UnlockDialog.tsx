@@ -1,9 +1,8 @@
-import {
-  decrypt,
-  deriveMasterKey,
-  timingSafeEqual,
-  UNLOCK_CHECK_BYTES,
-} from "@/lib/crypt";
+import { unlockMasterKey } from "@/lib/crypt";
+import { migrateMasterKeyToArgon2id } from "@/lib/calendar/crypt";
+import { useApi } from "@/context/ApiContext";
+import { useStorage } from "@/context/StorageContext";
+import { toast } from "sonner";
 import { Card, CardContent } from "../ui/card";
 import {
   Dialog,
@@ -20,6 +19,8 @@ import { Button } from "../ui/button";
 
 export default function UnlockDialog() {
   const { user, setMasterKey, logout } = useUser();
+  const { post } = useApi();
+  const storage = useStorage();
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -34,20 +35,28 @@ export default function UnlockDialog() {
 
     const password = data.get("password") as string;
     const salt = Uint8Array.from(atob(user.salt), (c) => c.charCodeAt(0));
-    const masterKey = await deriveMasterKey(password, salt);
+    const encryptedChallenge = Uint8Array.from(
+      atob(atob(user.challenge)),
+      (c) => c.charCodeAt(0),
+    );
 
     try {
-      const challenge = await decrypt(
-        Uint8Array.from(atob(atob(user.challenge)), (c) => c.charCodeAt(0))
-          .buffer,
-        masterKey,
+      const { masterKey, needsMigration } = await unlockMasterKey(
+        password,
+        salt,
+        encryptedChallenge,
       );
+      setMasterKey(masterKey);
+      setError(false);
 
-      if (timingSafeEqual(challenge, UNLOCK_CHECK_BYTES)) {
-        setMasterKey(masterKey);
-        setError(false);
-      } else {
-        setError(true);
+      // upgrade legacy Argon2d keys to Argon2id in the background
+      if (needsMigration) {
+        migrateMasterKeyToArgon2id(password, salt, masterKey, post, storage)
+          .then((upgradedKey) => {
+            setMasterKey(upgradedKey);
+            toast.success("Your account security has been upgraded.");
+          })
+          .catch((err) => console.error("Master key migration failed:", err));
       }
     } catch {
       setError(true);

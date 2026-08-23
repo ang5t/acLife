@@ -2,8 +2,11 @@ import type { WithChildren } from "@/types/Props";
 import type { User } from "@/types/User";
 import { createContext, useContext, useEffect, useState } from "react";
 import { useApi } from "./ApiContext";
-import { deriveMasterKey } from "@/lib/crypt";
+import { unlockMasterKey } from "@/lib/crypt";
+import { migrateMasterKeyToArgon2id } from "@/lib/calendar/crypt";
 import { uint8ArrayFromBase64 } from "@/lib/utils";
+import { useStorage } from "@/context/StorageContext";
+import { toast } from "sonner";
 
 type UserContextValue = {
   user: User | null;
@@ -27,6 +30,7 @@ export function UserProvider({ children }: WithChildren) {
   const [user, setUser] = useState<User | null>(null);
   const [masterKey, setMasterKey] = useState<CryptoKey | null>(null);
   const { get, post } = useApi();
+  const storage = useStorage();
 
   const checkLogin = async (password: string | null = null) => {
     const res = await get<User>("user");
@@ -39,10 +43,34 @@ export function UserProvider({ children }: WithChildren) {
       if (newUser.type !== "online") throw new Error(); // won't happen
 
       setUser(newUser);
-      if (password)
-        setMasterKey(
-          await deriveMasterKey(password, uint8ArrayFromBase64(newUser.salt)),
-        );
+      if (password) {
+        try {
+          const salt = uint8ArrayFromBase64(newUser.salt);
+          const encryptedChallenge = uint8ArrayFromBase64(
+            atob(newUser.challenge),
+          );
+          const { masterKey, needsMigration } = await unlockMasterKey(
+            password,
+            salt,
+            encryptedChallenge,
+          );
+          setMasterKey(masterKey);
+
+          // upgrade legacy Argon2d keys to Argon2id in the background
+          if (needsMigration) {
+            migrateMasterKeyToArgon2id(password, salt, masterKey, post, storage)
+              .then((upgradedKey) => {
+                setMasterKey(upgradedKey);
+                toast.success("Your account security has been upgraded.");
+              })
+              .catch((err) =>
+                console.error("Master key migration failed:", err),
+              );
+          }
+        } catch {
+          setMasterKey(null); // will prompt UnlockDialog to ask for the password again
+        }
+      }
       return newUser;
     } else setUser(null);
   };

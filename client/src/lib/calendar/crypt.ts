@@ -2,11 +2,19 @@ import type {
   CalendarEvent,
   DecryptedEvent,
   EncryptedEvent,
+  EventSyncResponse,
   RawCalendarEvent,
 } from "@/types/calendar/Event";
 import type { Encrypted } from "@/types/Crypt";
+import type { APIResponse } from "@/types/API";
 import { DateTime } from "luxon";
-import { encrypt, decrypt } from "../crypt";
+import {
+  ArgonType,
+  deriveMasterKey,
+  encrypt,
+  decrypt,
+  UNLOCK_CHECK_BYTES,
+} from "../crypt";
 import { compress, decompress } from "../gzip";
 import { arrayBufferToBase64, uint8ArrayFromBase64 } from "../utils";
 
@@ -80,3 +88,73 @@ const cookEvent = (event: RawCalendarEvent): CalendarEvent =>
     start: DateTime.fromISO(event.start),
     end: DateTime.fromISO(event.end),
   }) as CalendarEvent;
+
+type ApiPost = <T>(endpoint: string, body: unknown) => Promise<APIResponse<T>>;
+
+type CacheStorage = {
+  get(key: "cachedEvents"): Encrypted | null;
+  set(key: "cachedEvents", value: Encrypted | null): void;
+};
+
+export const migrateMasterKeyToArgon2id = async (
+  password: string,
+  salt: Uint8Array,
+  oldMasterKey: CryptoKey,
+  post: ApiPost,
+  storage?: CacheStorage,
+): Promise<CryptoKey> => {
+  const newMasterKey = await deriveMasterKey(
+    password,
+    salt,
+    false,
+    ArgonType.Argon2id,
+  );
+
+  const newChallenge = await encrypt(UNLOCK_CHECK_BYTES, newMasterKey);
+  const challengeRes = await post<never>("user/challenge", {
+    challenge: arrayBufferToBase64(newChallenge),
+  });
+  if (!challengeRes.success) {
+    throw new Error(
+      challengeRes.message || "Failed to update security challenge.",
+    );
+  }
+
+  const syncRes = await post<EventSyncResponse>("calendar/events/sync", []);
+  if (!syncRes.success || !syncRes.data) {
+    throw new Error(
+      syncRes.message || "Failed to fetch calendar events for migration.",
+    );
+  }
+
+  const allEncrypted = [...syncRes.data.added, ...syncRes.data.updated];
+  const decryptedEvents =
+    allEncrypted.length > 0
+      ? (await decryptEvents(allEncrypted, oldMasterKey)).map((ev) => ({
+          ...ev.data,
+          timestamp: ev.updatedAt,
+        }))
+      : [];
+
+  if (decryptedEvents.length > 0) {
+    const reencrypted = await encryptEvents(decryptedEvents, newMasterKey);
+    const saveRes = await post(
+      "calendar/events/save",
+      reencrypted.map((event) => ({ type: "updated", event })),
+    );
+    if (!saveRes.success) {
+      throw new Error(
+        saveRes.message || "Failed to re-encrypt calendar events.",
+      );
+    }
+  }
+
+  storage?.set(
+    "cachedEvents",
+    decryptedEvents.length > 0
+      ? await encryptOfflineEvents(decryptedEvents, newMasterKey)
+      : null,
+  );
+
+  return newMasterKey;
+};

@@ -1,7 +1,7 @@
 import argon2 from "argon2-browser/dist/argon2-bundled.min.js";
 
 self.onmessage = async (e) => {
-  const { password, salt, time, mem, hashLen, parallelism } = e.data;
+  const { password, salt, time, mem, hashLen, parallelism, type } = e.data;
 
   try {
     const result = await argon2.hash({
@@ -11,6 +11,7 @@ self.onmessage = async (e) => {
       mem,
       hashLen,
       parallelism,
+      type,
     });
 
     self.postMessage({ hash: Array.from(result.hash) });

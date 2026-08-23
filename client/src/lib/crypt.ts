@@ -11,23 +11,25 @@ export const SRP_PARAMS: Params = {
   name: "DH16-SHA256-CustomKDF",
   group: RFC5054Group4096,
   hash: async (...inputs: Uint8Array[]) => {
-    const data = concatUint8Array(...inputs);
+    const data = new Uint8Array(concatUint8Array(...inputs));
     return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
   },
   kdf: async (username: string, password: string, salt: Uint8Array) => {
     const enc = new TextEncoder();
     const inner = await crypto.subtle.digest(
       "SHA-256",
-      concatUint8Array(
-        enc.encode(username),
-        enc.encode(":"),
-        enc.encode(password),
+      new Uint8Array(
+        concatUint8Array(
+          enc.encode(username),
+          enc.encode(":"),
+          enc.encode(password),
+        ),
       ),
     );
     return new Uint8Array(
       await crypto.subtle.digest(
         "SHA-256",
-        concatUint8Array(salt, new Uint8Array(inner)),
+        new Uint8Array(concatUint8Array(salt, new Uint8Array(inner))),
       ),
     );
   },
@@ -37,10 +39,18 @@ export const UNLOCK_CHECK_BYTES = new Uint8Array([
   117, 110, 108, 111, 99, 107, 45, 99, 104, 101, 99, 107, 45, 111, 107, 33,
 ]);
 
+// matches argon2-browser's ArgonType enum
+export const ArgonType = {
+  Argon2d: 0,
+  Argon2i: 1,
+  Argon2id: 2,
+} as const;
+
 export const deriveMasterKey = async (
   password: string,
   salt: Uint8Array,
   exportable: boolean = false,
+  type: number = ArgonType.Argon2id,
 ): Promise<CryptoKey> => {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./worker/argon.ts", import.meta.url), {
@@ -71,8 +81,34 @@ export const deriveMasterKey = async (
       mem: 65536,
       hashLen: 32,
       parallelism: 1,
+      type,
     });
   });
+};
+
+export type UnlockResult = {
+  masterKey: CryptoKey;
+  needsMigration: boolean;
+};
+
+export const unlockMasterKey = async (
+  password: string,
+  salt: Uint8Array,
+  encryptedChallenge: Uint8Array,
+): Promise<UnlockResult> => {
+  for (const type of [ArgonType.Argon2id, ArgonType.Argon2d]) {
+    try {
+      const key = await deriveMasterKey(password, salt, false, type);
+      const challenge = await decrypt(encryptedChallenge, key);
+      if (timingSafeEqual(challenge, UNLOCK_CHECK_BYTES)) {
+        return { masterKey: key, needsMigration: type !== ArgonType.Argon2id };
+      }
+    } catch {
+      // try next algorithm
+    }
+  }
+
+  throw new Error("Invalid password.");
 };
 
 export const randomBytes = (len: number): Uint8Array => {
@@ -86,7 +122,11 @@ export const encrypt = async (
   const iv = crypto.getRandomValues(new Uint8Array(12));
 
   const ciphertext = new Uint8Array(
-    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, payload),
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      new Uint8Array(payload),
+    ),
   );
 
   const combined = new Uint8Array(iv.length + ciphertext.length);
@@ -97,7 +137,7 @@ export const encrypt = async (
 };
 
 export const decrypt = async (
-  data: Encrypted,
+  data: Encrypted | Uint8Array,
   key: CryptoKey,
 ): Promise<Uint8Array> => {
   const bytes = new Uint8Array(data);

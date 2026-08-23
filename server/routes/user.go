@@ -18,6 +18,7 @@ func User(r *mux.Router) {
 	sr.Use(handlers.RateLimitMiddleware(5, time.Second)) // 5 reqs/sec
 
 	sr.HandleFunc("", handlers.UserInfo).Methods("GET")
+	sr.HandleFunc("/challenge", handlers.UpdateChallenge).Methods("POST")
 	sr.HandleFunc("/push/subscribe", handlers.PushSubscribe).Methods("POST")
 
 	if os.Getenv("ENV") != "production" {

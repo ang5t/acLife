@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"acLife/constants"
 	"acLife/database"
 	"acLife/push"
 	"acLife/session"
@@ -32,6 +33,38 @@ func UserInfo(w http.ResponseWriter, r *http.Request) {
 			Salt:               user.Salt,
 			Challenge:          user.Challenge,
 		},
+	})
+}
+
+// UpdateChallenge overwrites the caller's encrypted unlock-check blob.
+func UpdateChallenge(w http.ResponseWriter, r *http.Request) {
+	user := session.GetLoggedInUser(r)
+	utils.Assert(user != nil) // ensured by AuthMiddleware
+
+	var req struct {
+		Challenge string `json:"challenge"`
+	}
+	if err := utils.ParseJSON(r.Body, &req); err != nil {
+		utils.SendBadRequest(w)
+		return
+	}
+
+	if len(req.Challenge) == 0 || len(req.Challenge) > constants.MaxChallengeLen {
+		utils.SendBadRequest(w)
+		return
+	}
+
+	if _, err := database.Exec(r.Context(),
+		"UPDATE users SET challenge = ? WHERE uuid = ?",
+		req.Challenge, user.UUID,
+	); err != nil {
+		utils.LogError("UpdateChallenge", "database.Exec", err)
+		utils.SendInternalError(w)
+		return
+	}
+
+	utils.SendJSON(w, http.StatusOK, types.Reply[any]{
+		Success: true,
 	})
 }
 
