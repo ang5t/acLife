@@ -15,25 +15,28 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: client/package-lock.json
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - name: Use pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install client dependencies
         working-directory: client
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run client lint
         working-directory: client
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Run client tests
         working-directory: client
-        run: npm run test
+        run: pnpm run test
 
       - name: Build client
         working-directory: client
-        run: npm run build
+        run: pnpm run build
 
       # --- server ---
       - name: Use Go
