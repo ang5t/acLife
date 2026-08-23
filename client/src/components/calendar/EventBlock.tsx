@@ -24,22 +24,19 @@ import {
 import useTapInteraction from "@/hooks/useTapInteraction";
 import { useCalendar } from "@/context/CalendarContext";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { findFreeSlot } from "@/lib/calendar/freeSpace";
 import { toast } from "sonner";
+import {
+  getMovedEvent,
+  findFreeSlotForEvent,
+  MOVE_MINUTE_STEPS,
+  MOVE_HOUR_STEPS,
+  MOVE_UNIT_STEPS,
+} from "@/lib/calendar/moveHelpers";
 
 // how long (ms) a touch must be held roughly still before it starts a drag
 const LONG_PRESS_MS = 450;
 // how far (px) a touch may move during the hold before it's treated as a scroll/tap instead
 const LONG_PRESS_TOLERANCE = 10;
-
-const MOVE_MINUTE_STEPS = [5, 10, 15, 30];
-const MOVE_HOUR_STEPS = [1, 2, 3, 4, 5, 8];
-const MOVE_UNIT_STEPS: { label: string; unit: "days" | "weeks" | "months" | "years" }[] = [
-  { label: "Day", unit: "days" },
-  { label: "Week", unit: "weeks" },
-  { label: "Month", unit: "months" },
-  { label: "Year", unit: "years" },
-];
 
 export default memo(
   function EventBlock({
@@ -229,12 +226,7 @@ export default memo(
         unit: "minutes" | "hours" | "days" | "weeks" | "months" | "years",
         amount: number,
       ) => {
-        const delta = direction === "forward" ? amount : -amount;
-        const newEvent = {
-          ...event,
-          start: event.start.plus({ [unit]: delta }),
-          end: event.end.plus({ [unit]: delta }),
-        };
+        const newEvent = getMovedEvent(event, direction, unit, amount);
         onEventEdit(event, newEvent);
       },
       [event, onEventEdit],
@@ -242,7 +234,7 @@ export default memo(
 
     const moveToFreeSpace = useCallback(
       (direction: "forward" | "backward") => {
-        const slot = findFreeSlot(calendarEvents, event, direction);
+        const slot = findFreeSlotForEvent(calendarEvents, event, direction);
 
         if (!slot) {
           toast.error("No free slot found");

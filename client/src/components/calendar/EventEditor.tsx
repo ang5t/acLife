@@ -19,13 +19,32 @@ import { DateTimePicker } from "./DateTimePicker";
 import { DateTime } from "luxon";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Clipboard, CopyIcon, MoreVerticalIcon, Trash2Icon, XIcon } from "lucide-react";
+import {
+  Clipboard,
+  CopyIcon,
+  MoreVerticalIcon,
+  MoveIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator,
 } from "../ui/dropdown-menu";
+import { useCalendar } from "@/context/CalendarContext";
+import {
+  getMovedEvent,
+  findFreeSlotForEvent,
+  MOVE_MINUTE_STEPS,
+  MOVE_HOUR_STEPS,
+  MOVE_UNIT_STEPS,
+} from "@/lib/calendar/moveHelpers";
 import {
   Select,
   SelectContent,
@@ -110,6 +129,8 @@ export default function EventEditor({
   );
   const isMobile = useIsMobile();
 
+  const { calendarEvents } = useCalendar();
+
   const newEvent = useRef<CalendarEvent>({
     ...originalEvent.current,
     title,
@@ -119,6 +140,190 @@ export default function EventEditor({
     end: DateTime.fromJSDate(end || new Date()),
     timestamp: Date.now(),
   });
+
+  function MoveMenu({
+    onSave,
+  }: {
+    onSave: (o: CalendarEvent, n: CalendarEvent) => void;
+  }) {
+    return (
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger className="gap-2">
+          <MoveIcon />
+          Move...
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Forward...</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {MOVE_MINUTE_STEPS.map((minutes) => (
+                <DropdownMenuItem
+                  key={`fwd-min-${minutes}`}
+                  onClick={() =>
+                    onSave(
+                      originalEvent.current,
+                      getMovedEvent(
+                        originalEvent.current,
+                        "forward",
+                        "minutes",
+                        minutes,
+                      ),
+                    )
+                  }
+                >
+                  {minutes} minutes
+                </DropdownMenuItem>
+              ))}
+              {MOVE_HOUR_STEPS.map((hours) => (
+                <DropdownMenuItem
+                  key={`fwd-hour-${hours}`}
+                  onClick={() =>
+                    onSave(
+                      originalEvent.current,
+                      getMovedEvent(
+                        originalEvent.current,
+                        "forward",
+                        "hours",
+                        hours,
+                      ),
+                    )
+                  }
+                >
+                  {hours} hour{hours > 1 ? "s" : ""}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Backward...</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {MOVE_MINUTE_STEPS.map((minutes) => (
+                <DropdownMenuItem
+                  key={`bwd-min-${minutes}`}
+                  onClick={() =>
+                    onSave(
+                      originalEvent.current,
+                      getMovedEvent(
+                        originalEvent.current,
+                        "backward",
+                        "minutes",
+                        minutes,
+                      ),
+                    )
+                  }
+                >
+                  {minutes} minutes
+                </DropdownMenuItem>
+              ))}
+              {MOVE_HOUR_STEPS.map((hours) => (
+                <DropdownMenuItem
+                  key={`bwd-hour-${hours}`}
+                  onClick={() =>
+                    onSave(
+                      originalEvent.current,
+                      getMovedEvent(
+                        originalEvent.current,
+                        "backward",
+                        "hours",
+                        hours,
+                      ),
+                    )
+                  }
+                >
+                  {hours} hour{hours > 1 ? "s" : ""}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Next...</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {MOVE_UNIT_STEPS.map(({ label, unit }) => (
+                <DropdownMenuItem
+                  key={`next-${unit}`}
+                  onClick={() =>
+                    onSave(
+                      originalEvent.current,
+                      getMovedEvent(originalEvent.current, "forward", unit, 1),
+                    )
+                  }
+                >
+                  {label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Previous...</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {MOVE_UNIT_STEPS.map(({ label, unit }) => (
+                <DropdownMenuItem
+                  key={`prev-${unit}`}
+                  onClick={() =>
+                    onSave(
+                      originalEvent.current,
+                      getMovedEvent(originalEvent.current, "backward", unit, 1),
+                    )
+                  }
+                >
+                  {label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem
+            onClick={() => {
+              const slot = findFreeSlotForEvent(
+                calendarEvents,
+                originalEvent.current,
+                "forward",
+              );
+              if (!slot) return toast.error("No free slot found");
+              onSave(originalEvent.current, {
+                ...originalEvent.current,
+                start: slot.start,
+                end: slot.end,
+              });
+              const sameDay = slot.start.hasSame(slot.end, "day");
+              toast.success(
+                `Moved to ${slot.start.toFormat("EEE, MMM d, h:mm a")} - ${slot.end.toFormat(sameDay ? "h:mm a" : "EEE, MMM d, h:mm a")}`,
+              );
+            }}
+          >
+            Next free slot
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => {
+              const slot = findFreeSlotForEvent(
+                calendarEvents,
+                originalEvent.current,
+                "backward",
+              );
+              if (!slot) return toast.error("No free slot found");
+              onSave(originalEvent.current, {
+                ...originalEvent.current,
+                start: slot.start,
+                end: slot.end,
+              });
+              const sameDay = slot.start.hasSame(slot.end, "day");
+              toast.success(
+                `Moved to ${slot.start.toFormat("EEE, MMM d, h:mm a")} - ${slot.end.toFormat(sameDay ? "h:mm a" : "EEE, MMM d, h:mm a")}`,
+              );
+            }}
+          >
+            Previous free slot
+          </DropdownMenuItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+    );
+  }
 
   const presetColors = [
     "#2563eb",
@@ -310,6 +515,9 @@ export default function EventEditor({
                 <Clipboard />
                 {event._parent ? "Copy parent ID" : "Copy ID"}
               </DropdownMenuItem>
+
+              {/* Move submenu (mobile) */}
+              <MoveMenu onSave={onSave} />
             </DropdownMenuContent>
           </DropdownMenu>
           <Button variant="ghost" size="icon" onClick={onCancel}>
