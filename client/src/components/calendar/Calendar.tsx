@@ -940,7 +940,7 @@ export default function AppCalendar({
       <nav className="flex items-center justify-between border-b p-3">
         {isMobile && <SidebarTrigger />}
 
-        <div className="flex items-center gap-2 hidden md:flex">
+        <div className="items-center gap-2 hidden md:flex">
           <Button
             variant="outline"
             onClick={() => setCurrentDate(DateTime.now())}

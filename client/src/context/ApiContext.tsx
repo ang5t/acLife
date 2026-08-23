@@ -94,12 +94,10 @@ export const ApiProvider = ({
         const headers: Record<string, string> = {};
         let payload: BodyInit | null = null;
 
-        if (
-          body instanceof Blob ||
-          body instanceof ArrayBuffer ||
-          body instanceof Uint8Array
-        ) {
+        if (body instanceof Blob || body instanceof ArrayBuffer) {
           payload = body;
+        } else if (body instanceof Uint8Array) {
+          payload = new Uint8Array(body).buffer;
         } else {
           payload = JSON.stringify(body);
           headers["Content-Type"] = "application/json";
