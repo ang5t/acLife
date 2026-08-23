@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DateTime, Settings } from "luxon";
+import {
+  getMovedEvent,
+  findFreeSlotForEvent,
+} from "../../src/lib/calendar/moveHelpers";
 
 vi.mock("../../src/components/ui/sidebar.tsx", () => {
   return {
@@ -104,21 +114,28 @@ const getDayCell = (dayIndex = 0) => {
 
 const getEventBlock = async (title: string) => {
   const labels = await screen.findAllByText(title);
-  const label = labels.find((node) => node.closest(".event-block")) ?? labels[0];
+  const label =
+    labels.find((node) => node.closest(".event-block")) ?? labels[0];
   const block = label.closest(".event-block") as HTMLDivElement | null;
 
   expect(block).toBeTruthy();
   return block!;
 };
 
-const openEventEditor = async (user: ReturnType<typeof userEvent.setup>, title: string) => {
+const openEventEditor = async (
+  user: ReturnType<typeof userEvent.setup>,
+  title: string,
+) => {
   await user.dblClick(await getEventBlock(title));
   expect(
     await screen.findByRole("heading", { name: /edit event/i }),
   ).toBeInTheDocument();
 };
 
-const openEventMenu = async (user: ReturnType<typeof userEvent.setup>, title: string) => {
+const openEventMenu = async (
+  user: ReturnType<typeof userEvent.setup>,
+  title: string,
+) => {
   await user.pointer({
     target: await getEventBlock(title),
     keys: "[MouseRight]",
@@ -130,17 +147,18 @@ const countEventBlocks = (title: string) =>
     node.textContent?.includes(title),
   ).length;
 
-const makeRect = (left: number, top: number, width: number, height: number) => ({
-  x: left,
-  y: top,
-  left,
-  top,
-  width,
-  height,
-  right: left + width,
-  bottom: top + height,
-  toJSON: () => {},
-}) as DOMRect;
+const makeRect = (left: number, top: number, width: number, height: number) =>
+  ({
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => {},
+  }) as DOMRect;
 
 const dayCenterX = (dayIndex: number) =>
   TIME_GUTTER_WIDTH + DAY_WIDTH * dayIndex + DAY_WIDTH / 2;
@@ -278,7 +296,9 @@ describe("Calendar", () => {
     }
 
     expect(await screen.findByText("Planning")).toBeInTheDocument();
-    expect((await screen.findAllByText("Daily standup")).length).toBeGreaterThan(1);
+    expect(
+      (await screen.findAllByText("Daily standup")).length,
+    ).toBeGreaterThan(1);
   });
 
   it("moves between days and returns to today", async () => {
@@ -366,10 +386,14 @@ describe("Calendar", () => {
     expect(savedEvents).toHaveLength(1);
     expect(savedEvents[0].title).toBe("new event");
     expect(savedEvents[0].start.toISO()).toBe(
-      FIXED_NOW.startOf("week").plus({ days: 4, hours: 11, minutes: 25 }).toISO(),
+      FIXED_NOW.startOf("week")
+        .plus({ days: 4, hours: 11, minutes: 25 })
+        .toISO(),
     );
     expect(savedEvents[0].end.toISO()).toBe(
-      FIXED_NOW.startOf("week").plus({ days: 4, hours: 12, minutes: 25 }).toISO(),
+      FIXED_NOW.startOf("week")
+        .plus({ days: 4, hours: 12, minutes: 25 })
+        .toISO(),
     );
   });
 
@@ -460,7 +484,9 @@ describe("Calendar", () => {
     });
 
     await openEventMenu(user, "Planning");
-    await user.click(await screen.findByRole("menuitem", { name: /duplicate/i }));
+    await user.click(
+      await screen.findByRole("menuitem", { name: /duplicate/i }),
+    );
 
     await advanceSave();
 
@@ -468,7 +494,9 @@ describe("Calendar", () => {
 
     const savedEvents = getLastSavedEvents(saveEvents);
     expect(savedEvents).toHaveLength(2);
-    expect(savedEvents.filter((event) => event.title === "Planning")).toHaveLength(2);
+    expect(
+      savedEvents.filter((event) => event.title === "Planning"),
+    ).toHaveLength(2);
     expect(savedEvents[1].repeat).toBeUndefined();
   });
 
@@ -570,8 +598,12 @@ describe("Calendar", () => {
     const savedEvents = getLastSavedEvents(saveEvents);
     expect(savedEvents).toHaveLength(2);
 
-    const parentEvent = savedEvents.find((event) => event.id === "repeat-parent");
-    const detachedEvent = savedEvents.find((event) => event.id !== "repeat-parent");
+    const parentEvent = savedEvents.find(
+      (event) => event.id === "repeat-parent",
+    );
+    const detachedEvent = savedEvents.find(
+      (event) => event.id !== "repeat-parent",
+    );
 
     expect(parentEvent?.title).toBe("One-off standup");
     expect(parentEvent?.start.toISO()).toBe(
@@ -633,7 +665,9 @@ describe("Calendar", () => {
     await advanceSave();
 
     expect(screen.queryByText("Daily standup")).not.toBeInTheDocument();
-    expect((await screen.findAllByText("Team standup")).length).toBeGreaterThan(1);
+    expect((await screen.findAllByText("Team standup")).length).toBeGreaterThan(
+      1,
+    );
 
     const savedEvents = getLastSavedEvents(saveEvents);
     expect(savedEvents).toHaveLength(1);
@@ -688,5 +722,105 @@ describe("Calendar", () => {
     const weekBlock = await getEventBlock("Review");
     expect(screen.getByText("Wed 18")).toBeInTheDocument();
     expect(weekBlock).toHaveTextContent("2:30 - 4 PM");
+  });
+});
+
+describe("moveHelpers", () => {
+  it("getMovedEvent shifts start and end by minutes, hours, days", () => {
+    const original = buildEvent({
+      id: "e1",
+      start: FIXED_NOW.startOf("day").plus({ hours: 9, minutes: 15 }),
+      end: FIXED_NOW.startOf("day").plus({ hours: 10, minutes: 15 }),
+    });
+
+    const movedMinutes = getMovedEvent(original, "forward", "minutes", 30);
+    expect(movedMinutes.start.toISO()).toBe(
+      original.start.plus({ minutes: 30 }).toISO(),
+    );
+    expect(movedMinutes.end.toISO()).toBe(
+      original.end.plus({ minutes: 30 }).toISO(),
+    );
+
+    const movedHours = getMovedEvent(original, "backward", "hours", 2);
+    expect(movedHours.start.toISO()).toBe(
+      original.start.minus({ hours: 2 }).toISO(),
+    );
+    expect(movedHours.end.toISO()).toBe(
+      original.end.minus({ hours: 2 }).toISO(),
+    );
+
+    const movedDays = getMovedEvent(original, "forward", "days", 1);
+    expect(movedDays.start.toISO()).toBe(
+      original.start.plus({ days: 1 }).toISO(),
+    );
+    expect(movedDays.end.toISO()).toBe(original.end.plus({ days: 1 }).toISO());
+  });
+
+  it("findFreeSlotForEvent finds next free slot forward skipping conflicts", () => {
+    const target = buildEvent({
+      id: "target",
+      start: FIXED_NOW.startOf("day").plus({ hours: 9 }),
+      end: FIXED_NOW.startOf("day").plus({ hours: 10 }),
+    });
+
+    const conflict = buildEvent({
+      id: "conflict",
+      start: FIXED_NOW.startOf("day").plus({ hours: 10 }),
+      end: FIXED_NOW.startOf("day").plus({ hours: 11 }),
+    });
+
+    const slot = findFreeSlotForEvent([target, conflict], target, "forward");
+    expect(slot).not.toBeNull();
+    expect(slot?.start.toISO()).toBe(
+      FIXED_NOW.startOf("day").plus({ hours: 11 }).toISO(),
+    );
+    expect(slot?.end.toISO()).toBe(
+      FIXED_NOW.startOf("day").plus({ hours: 12 }).toISO(),
+    );
+  });
+
+  it("findFreeSlotForEvent finds previous free slot backward skipping conflicts", () => {
+    const target = buildEvent({
+      id: "target2",
+      start: FIXED_NOW.startOf("day").plus({ hours: 9 }),
+      end: FIXED_NOW.startOf("day").plus({ hours: 10 }),
+    });
+
+    const conflict = buildEvent({
+      id: "conflict2",
+      start: FIXED_NOW.startOf("day").plus({ hours: 8 }),
+      end: FIXED_NOW.startOf("day").plus({ hours: 9 }),
+    });
+
+    const slot = findFreeSlotForEvent([target, conflict], target, "backward");
+    expect(slot).not.toBeNull();
+    expect(slot?.start.toISO()).toBe(
+      FIXED_NOW.startOf("day").plus({ hours: 7 }).toISO(),
+    );
+    expect(slot?.end.toISO()).toBe(
+      FIXED_NOW.startOf("day").plus({ hours: 8 }).toISO(),
+    );
+  });
+
+  it("findFreeSlotForEvent respects repeating events occurrences", () => {
+    const target = buildEvent({
+      id: "target3",
+      start: FIXED_NOW.startOf("week").plus({ days: 2, hours: 9 }),
+      end: FIXED_NOW.startOf("week").plus({ days: 2, hours: 10 }),
+    });
+
+    const repeating = buildEvent({
+      id: "repeat-parent",
+      start: FIXED_NOW.startOf("week").plus({ days: 2, hours: 10 }),
+      end: FIXED_NOW.startOf("week").plus({ days: 2, hours: 11 }),
+      repeat: { interval: 1, unit: "day" as const },
+    });
+
+    const slot = findFreeSlotForEvent([target, repeating], target, "forward");
+    expect(slot).not.toBeNull();
+    // should skip 10-11 occurrence and return 11-12 on same day
+    expect(slot?.start.toISO()).toBe(
+      FIXED_NOW.startOf("week").plus({ days: 2, hours: 11 }).toISO(),
+    );
   });
 });
