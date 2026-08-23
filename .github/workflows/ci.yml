@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- client ---
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Run client lint
+        working-directory: client
+        run: npm run lint
+
+      - name: Run client tests
+        working-directory: client
+        run: npm run test
+
+      - name: Build client
+        working-directory: client
+        run: npm run build
+
+      # --- server ---
+      - name: Use Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache: true
+
+      - name: Run server tests
+        working-directory: server
+        run: go test ./...
+
+      - name: Build server
+        working-directory: server
+        run: go build ./...
