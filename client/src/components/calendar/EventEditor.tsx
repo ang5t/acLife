@@ -260,7 +260,8 @@ export default function EventEditor({
         !editorRef.current.contains(el) &&
         !el.closest("[role=dialog]") && // color/date picker
         !el.closest("[role=presentation]") && // select dropdown
-        !el.closest("[data-sonner-toast]")
+        !el.closest("[data-sonner-toast]") &&
+        !el.closest('[data-slot^="dropdown-menu"]')
       ) {
         e.stopPropagation();
         onCancel();
