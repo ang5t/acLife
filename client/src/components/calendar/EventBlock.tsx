@@ -53,7 +53,7 @@ export default memo(
     onEventDelete,
     onDuplicate,
   }: EventBlockProps) {
-    const { setEditingEvent, calendarEvents } = useCalendar();
+    const { setEditingEvent, calendarEvents, lastPointer, setLastPointer } = useCalendar();
     const isMobile = useIsMobile();
 
     const { startsToday, endsToday } = useMemo(
@@ -155,6 +155,8 @@ export default memo(
 
     const handleTouchPointerDown = useCallback(
       (e: React.PointerEvent) => {
+        setLastPointer({ x: e.clientX, y: e.clientY });
+
         tapHandlers.onPointerDown(e);
 
         const timer = window.setTimeout(() => {
@@ -174,7 +176,7 @@ export default memo(
           activated: false,
         };
       },
-      [tapHandlers, onPointerDown, event, day],
+      [tapHandlers, onPointerDown, event, day, setLastPointer],
     );
 
     const handleTouchPointerMove = useCallback(
@@ -270,10 +272,12 @@ export default memo(
               style={blockStyle}
               onPointerDown={useCallback(
                 (e: React.PointerEvent) => {
+                  setLastPointer({ x: e.clientX, y: e.clientY });
+
                   if (e.pointerType === "touch") handleTouchPointerDown(e);
                   else onPointerDown(e, "move", event, day);
                 },
-                [handleTouchPointerDown, day, event, onPointerDown],
+                [handleTouchPointerDown, day, event, onPointerDown, setLastPointer],
               )}
               onPointerMove={handleTouchPointerMove}
               onPointerUp={handleTouchPointerUp}
@@ -439,20 +443,29 @@ export default memo(
           </ContextMenuContent>
         </ContextMenu>
 
-        {/* edit overlay */}
-        {editing && !event._continued && (
-          <EventEditor
-            event={event}
-            eventRef={eventRef}
-            onSave={(originalEvent, newEvent) => {
-              onEventEdit(originalEvent, newEvent);
-              setEditingEvent(null);
-            }}
-            onDelete={handleDelete}
-            onDuplicate={duplicate}
-            onCancel={() => setEditingEvent(null)}
-          />
-        )}
+        {(() => {
+          const containsPointer = () => {
+            if (!lastPointer || !eventRef.current) return false;
+            const r = eventRef.current.getBoundingClientRect();
+            return lastPointer.x >= r.left && lastPointer.x <= r.right && lastPointer.y >= r.top && lastPointer.y <= r.bottom;
+          };
+
+          const showEditor = editing && (!event._continued || containsPointer());
+
+          return showEditor ? (
+            <EventEditor
+              event={event}
+              eventRef={eventRef}
+              onSave={(originalEvent, newEvent) => {
+                onEventEdit(originalEvent, newEvent);
+                setEditingEvent(null);
+              }}
+              onDelete={handleDelete}
+              onDuplicate={duplicate}
+              onCancel={() => setEditingEvent(null)}
+            />
+          ) : null;
+        })()}
       </>
     );
   },
