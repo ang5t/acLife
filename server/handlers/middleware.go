@@ -225,6 +225,46 @@ func TimeoutMiddleware(d time.Duration) mux.MiddlewareFunc {
 	}
 }
 
+// CSRFMiddleware rejects requests that don't originate from a trusted client.
+func CSRFMiddleware() mux.MiddlewareFunc {
+	allowedOrigins := utils.GetAllowedOrigins()
+
+	originMap := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		originMap[origin] = struct{}{}
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Allow GET, HEAD, and OPTIONS requests without Origin header
+			if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			origin := r.Header.Get("Origin")
+
+			if origin == "" {
+				utils.SendJSON(w, http.StatusForbidden, types.Reply[any]{
+					Success: false,
+					Message: "Missing Origin.",
+				})
+				return
+			}
+
+			if _, allowed := originMap[origin]; !allowed {
+				utils.SendJSON(w, http.StatusForbidden, types.Reply[any]{
+					Success: false,
+					Message: "Invalid Origin.",
+				})
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 /* -------------------- Helpers -------------------- */
 
 func getSubStatus(subID string) (string, bool) {

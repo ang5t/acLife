@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/mail"
+	"os"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -118,4 +119,15 @@ func Base64ToUUID(b64 string) (string, error) {
 	)
 
 	return strings.ToLower(uuid), nil
+}
+
+// GetAllowedOrigins returns the list of allowed origins from the CORS_ALLOWED_ORIGINS environment variable.
+func GetAllowedOrigins() []string {
+	origins := strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",")
+
+	for i := range origins {
+		origins[i] = strings.TrimSpace(origins[i])
+	}
+
+	return origins
 }

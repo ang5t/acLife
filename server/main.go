@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 
 	"acLife/constants"
 	"acLife/database"
 	"acLife/handlers"
 	"acLife/routes"
 	"acLife/session"
+	"acLife/utils"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
@@ -72,6 +72,9 @@ func main() {
 	// Setup timeout
 	r.Use(handlers.TimeoutMiddleware(constants.HTTPTimeout))
 
+	// Reject cross-origin requests (CSRF protection)
+	r.Use(handlers.CSRFMiddleware())
+
 	// Routes consist of a path and a handler function
 	r.HandleFunc("/", handlers.Root).Methods("GET")
 	r.HandleFunc("/metadata", handlers.Metadata).Methods("GET")
@@ -87,11 +90,7 @@ func main() {
 	routes.Calendar(r)
 
 	// Setup CORS
-	origins := strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",")
-
-	for i := range origins {
-		origins[i] = strings.TrimSpace(origins[i])
-	}
+	origins := utils.GetAllowedOrigins();
 
 	c := cors.New(cors.Options{
 		AllowedOrigins:   origins,
