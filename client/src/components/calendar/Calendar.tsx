@@ -42,6 +42,7 @@ import ModeSwitcher from "./ModeSwitcher";
 import type { GridTouchRef } from "@/types/calendar/Cell";
 import { clamp } from "@/lib/utils";
 import RecurringUpdateDialog from "./RecurringUpdateDialog";
+import { detachSingleOccurrence } from "@/lib/calendar/recurrence";
 import type { PushEvent } from "@/types/Push";
 import { CLIENT_ID } from "@/hooks/calendar/useCalendarEvents";
 import { EMPTY_ARRAY } from "@/lib/constants";
@@ -416,6 +417,26 @@ export default function AppCalendar({
     [dispatch, updateChange, save],
   );
 
+  const onEventMove = useCallback(
+    (originalEvent: CalendarEvent, event: CalendarEvent) => {
+      // nothing changed, so there's nothing to save
+      if (eventUnchanged(originalEvent, event)) return;
+
+      // moving an event always affects this occurrence only, never prompts
+      detachSingleOccurrence(
+        event,
+        originalEvent.start,
+        originalEvent.end,
+        calendarEvents,
+        dispatch,
+        updateChange,
+      );
+
+      save();
+    },
+    [calendarEvents, dispatch, updateChange, save],
+  );
+
   const onEventDelete = useCallback(
     (event: CalendarEvent) => {
       if (event._parent || event.repeat) {
@@ -652,7 +673,11 @@ export default function AppCalendar({
   // move days with arrow keys
   useEffect(() => {
     const onArrowKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         move(-1);
@@ -897,6 +922,7 @@ export default function AppCalendar({
                         }
                         onPointerDown={onEventPointerDown}
                         onEventEdit={onEventEdit}
+                        onEventMove={onEventMove}
                         onEventDelete={onEventDelete}
                         onDuplicate={onEventDuplicate}
                       />
@@ -916,6 +942,7 @@ export default function AppCalendar({
       getNowY,
       hourHeight,
       onEventEdit,
+      onEventMove,
       onEventDelete,
       onEventDuplicate,
       onEventPointerDown,
@@ -1047,63 +1074,14 @@ export default function AppCalendar({
 
           switch (option) {
             case "this": {
-              // clone the event
-              const newEvent = {
-                ...event,
-                id: crypto.randomUUID(),
-                timestamp: Date.now(),
-              } as CalendarEvent;
-
-              if (isParent) {
-                // move parent to next non-skipped repetition
-                const interval = {
-                  [parent.repeat.unit]: parent.repeat.interval,
-                };
-
-                let nextStart = evStart.plus(interval);
-                let nextEnd = evEnd.plus(interval);
-
-                if (parent.repeat.skip?.length) {
-                  const skipped = new Set(parent.repeat.skip);
-
-                  while (skipped.has(nextStart.toUTC().toISODate()!)) {
-                    nextStart = nextStart.plus(interval);
-                    nextEnd = nextEnd.plus(interval);
-                  }
-                }
-
-                parent.start = nextStart;
-                parent.end = nextEnd;
-              } else {
-                // skip current repetition
-                if (!parent.repeat.skip) parent.repeat.skip = [];
-                parent.repeat.skip.push(evStart.toUTC().toISODate()!);
-              }
-
-              updateChange({
-                type: "updated",
-                event: parent,
-              });
-
-              dispatch({
-                type: "update",
-                id: parent.id,
-                data: parent,
-              });
-
-              delete newEvent._parent; // detach from parent
-              delete newEvent.repeat; // don't repeat
-
-              dispatch({
-                type: "add",
-                event: newEvent,
-              });
-
-              updateChange({
-                type: "added",
-                event: newEvent,
-              });
-
+              detachSingleOccurrence(
+                event,
+                evStart,
+                evEnd,
+                calendarEvents,
+                dispatch,
+                updateChange,
+              );
               break;
             }
 

@@ -13,25 +13,11 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "../ui/context-menu";
-import {
-  Clipboard,
-  CopyIcon,
-  MoveIcon,
-  PencilLine,
-  RedoDot,
-  Trash2,
-} from "lucide-react";
+import { Clipboard, CopyIcon, PencilLine, RedoDot, Trash2 } from "lucide-react";
 import useTapInteraction from "@/hooks/useTapInteraction";
 import { useCalendar } from "@/context/CalendarContext";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { toast } from "sonner";
-import {
-  getMovedEvent,
-  findFreeSlotForEvent,
-  MOVE_MINUTE_STEPS,
-  MOVE_HOUR_STEPS,
-  MOVE_UNIT_STEPS,
-} from "@/lib/calendar/moveHelpers";
+import { MoveMenuItems } from "./MoveMenuItems";
 
 // how long (ms) a touch must be held roughly still before it starts a drag
 const LONG_PRESS_MS = 450;
@@ -47,10 +33,11 @@ export default memo(
     editing,
     onPointerDown,
     onEventEdit,
+    onEventMove,
     onEventDelete,
     onDuplicate,
   }: EventBlockProps) {
-    const { setEditingEvent, calendarEvents, lastPointer, setLastPointer } = useCalendar();
+    const { setEditingEvent, lastPointer, setLastPointer } = useCalendar();
     const isMobile = useIsMobile();
 
     const { startsToday, endsToday } = useMemo(
@@ -220,37 +207,6 @@ export default memo(
       onDuplicate(event);
     }, [event, onDuplicate]);
 
-    const moveEvent = useCallback(
-      (
-        direction: "forward" | "backward",
-        unit: "minutes" | "hours" | "days" | "weeks" | "months" | "years",
-        amount: number,
-      ) => {
-        const newEvent = getMovedEvent(event, direction, unit, amount);
-        onEventEdit(event, newEvent);
-      },
-      [event, onEventEdit],
-    );
-
-    const moveToFreeSpace = useCallback(
-      (direction: "forward" | "backward") => {
-        const slot = findFreeSlotForEvent(calendarEvents, event, direction);
-
-        if (!slot) {
-          toast.error("No free slot found");
-          return;
-        }
-
-        onEventEdit(event, { ...event, start: slot.start, end: slot.end });
-
-        const sameDay = slot.start.hasSame(slot.end, "day");
-        toast.success(
-          `Moved to ${slot.start.toFormat("EEE, MMM d, h:mm a")} - ${slot.end.toFormat(sameDay ? "h:mm a" : "EEE, MMM d, h:mm a")}`,
-        );
-      },
-      [event, calendarEvents, onEventEdit],
-    );
-
     return (
       <>
         <ContextMenu>
@@ -269,7 +225,13 @@ export default memo(
                   if (e.pointerType === "touch") handleTouchPointerDown(e);
                   else onPointerDown(e, "move", event, day);
                 },
-                [handleTouchPointerDown, day, event, onPointerDown, setLastPointer],
+                [
+                  handleTouchPointerDown,
+                  day,
+                  event,
+                  onPointerDown,
+                  setLastPointer,
+                ],
               )}
               onPointerMove={handleTouchPointerMove}
               onPointerUp={handleTouchPointerUp}
@@ -339,95 +301,17 @@ export default memo(
               Duplicate
             </ContextMenuItem>
 
-            <ContextMenuSub>
-              <ContextMenuSubTrigger className="gap-2">
-                <MoveIcon />
-                Move...
-              </ContextMenuSubTrigger>
-              <ContextMenuSubContent>
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>Forward...</ContextMenuSubTrigger>
-                  <ContextMenuSubContent>
-                    {MOVE_MINUTE_STEPS.map((minutes) => (
-                      <ContextMenuItem
-                        key={`fwd-min-${minutes}`}
-                        onClick={() => moveEvent("forward", "minutes", minutes)}
-                      >
-                        {minutes} minutes
-                      </ContextMenuItem>
-                    ))}
-                    {MOVE_HOUR_STEPS.map((hours) => (
-                      <ContextMenuItem
-                        key={`fwd-hour-${hours}`}
-                        onClick={() => moveEvent("forward", "hours", hours)}
-                      >
-                        {hours} hour{hours > 1 ? "s" : ""}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>Backward...</ContextMenuSubTrigger>
-                  <ContextMenuSubContent>
-                    {MOVE_MINUTE_STEPS.map((minutes) => (
-                      <ContextMenuItem
-                        key={`bwd-min-${minutes}`}
-                        onClick={() => moveEvent("backward", "minutes", minutes)}
-                      >
-                        {minutes} minutes
-                      </ContextMenuItem>
-                    ))}
-                    {MOVE_HOUR_STEPS.map((hours) => (
-                      <ContextMenuItem
-                        key={`bwd-hour-${hours}`}
-                        onClick={() => moveEvent("backward", "hours", hours)}
-                      >
-                        {hours} hour{hours > 1 ? "s" : ""}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>Next...</ContextMenuSubTrigger>
-                  <ContextMenuSubContent>
-                    {MOVE_UNIT_STEPS.map(({ label, unit }) => (
-                      <ContextMenuItem
-                        key={`next-${unit}`}
-                        onClick={() => moveEvent("forward", unit, 1)}
-                      >
-                        {label}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger>Previous...</ContextMenuSubTrigger>
-                  <ContextMenuSubContent>
-                    {MOVE_UNIT_STEPS.map(({ label, unit }) => (
-                      <ContextMenuItem
-                        key={`prev-${unit}`}
-                        onClick={() => moveEvent("backward", unit, 1)}
-                      >
-                        {label}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-
-                <ContextMenuSeparator />
-
-                <ContextMenuItem onClick={() => moveToFreeSpace("forward")}>
-                  Next free slot
-                </ContextMenuItem>
-
-                <ContextMenuItem onClick={() => moveToFreeSpace("backward")}>
-                  Previous free slot
-                </ContextMenuItem>
-              </ContextMenuSubContent>
-            </ContextMenuSub>
+            <MoveMenuItems
+              event={event}
+              onMove={onEventMove}
+              menu={{
+                Sub: ContextMenuSub,
+                SubTrigger: ContextMenuSubTrigger,
+                SubContent: ContextMenuSubContent,
+                Item: ContextMenuItem,
+                Separator: ContextMenuSeparator,
+              }}
+            />
 
             <ContextMenuItem onClick={handleDelete}>
               <Trash2 /> Delete
@@ -439,10 +323,16 @@ export default memo(
           const containsPointer = () => {
             if (!lastPointer || !eventRef.current) return false;
             const r = eventRef.current.getBoundingClientRect();
-            return lastPointer.x >= r.left && lastPointer.x <= r.right && lastPointer.y >= r.top && lastPointer.y <= r.bottom;
+            return (
+              lastPointer.x >= r.left &&
+              lastPointer.x <= r.right &&
+              lastPointer.y >= r.top &&
+              lastPointer.y <= r.bottom
+            );
           };
 
-          const showEditor = editing && (!event._continued || containsPointer());
+          const showEditor =
+            editing && (!event._continued || containsPointer());
 
           return showEditor ? (
             <EventEditor
@@ -450,6 +340,10 @@ export default memo(
               eventRef={eventRef}
               onSave={(originalEvent, newEvent) => {
                 onEventEdit(originalEvent, newEvent);
+                setEditingEvent(null);
+              }}
+              onMove={(originalEvent, newEvent) => {
+                onEventMove(originalEvent, newEvent);
                 setEditingEvent(null);
               }}
               onDelete={handleDelete}
