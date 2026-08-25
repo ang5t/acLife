@@ -1044,6 +1044,7 @@ export default function AppCalendar({
           if (!event) {
             toast.error("Event no longer exists.");
             dragRef.current = null;
+            evPendingUpdateRef.current = null;
             setUpdateRepeatDialogOpen(false);
             return;
           }
@@ -1064,6 +1065,10 @@ export default function AppCalendar({
               type: "updated",
               event,
             });
+
+            dragRef.current = null;
+            evPendingUpdateRef.current = null;
+            save();
 
             return;
           }
@@ -1132,17 +1137,23 @@ export default function AppCalendar({
               });
 
               // end parent's repetition
-              parent.repeat.until = event.start.startOf("day").toMillis();
+              const updatedParent = {
+                ...parent,
+                repeat: {
+                  ...parent.repeat,
+                  until: event.start.startOf("day").toMillis(),
+                },
+              };
 
               updateChange({
                 type: "updated",
-                event: parent,
+                event: updatedParent,
               });
 
               dispatch({
                 type: "update",
-                id: parent.id,
-                data: parent,
+                id: updatedParent.id,
+                data: updatedParent,
               });
               break;
             }
@@ -1164,15 +1175,20 @@ export default function AppCalendar({
               }
 
               // update the parent
+              const startDayOffset = evStart
+                .startOf("day")
+                .diff(event.start.startOf("day"), "days").days;
+              const endDayOffset = evStart
+                .startOf("day")
+                .diff(event.end.startOf("day"), "days").days;
+
               const newEvent = {
                 ...event,
-                start: parent.start.set({
-                  day: parent.start.day - (evStart.day - event.start.day),
+                start: parent.start.minus({ days: startDayOffset }).set({
                   hour: event.start.hour,
                   minute: event.start.minute,
                 }),
-                end: parent.end.set({
-                  day: parent.end.day - (evStart.day - event.end.day),
+                end: parent.end.minus({ days: endDayOffset }).set({
                   hour: event.end.hour,
                   minute: event.end.minute,
                 }),
