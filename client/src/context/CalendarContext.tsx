@@ -17,7 +17,8 @@ type CalendarContextValue = {
   calendarEvents: CalendarEvent[];
   dispatch: Dispatch<CalendarAction>;
   editingEvent: CalendarEvent | null;
-  setEditingEvent: (event: CalendarEvent | null) => void;
+  editingEventDay: number | null;
+  setEditingEvent: (event: CalendarEvent | null, day?: number | null) => void;
   lastPointer: { x: number; y: number } | null;
   setLastPointer: (p: { x: number; y: number } | null) => void;
 };
@@ -27,8 +28,22 @@ const CalendarContext = createContext<CalendarContextValue | null>(null);
 export function CalendarProvider({ children }: WithChildren) {
   const [currentDate, setCurrentDate] = useState(DateTime.now());
   const [calendarEvents, dispatch] = useReducer(calendarReducer, []);
-  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
-  const [lastPointer, setLastPointer] = useState<{ x: number; y: number } | null>(null);
+  const [editingEvent, setEditingEventState] = useState<CalendarEvent | null>(
+    null,
+  );
+  const [editingEventDay, setEditingEventDay] = useState<number | null>(null);
+  const [lastPointer, setLastPointer] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const setEditingEvent = (
+    event: CalendarEvent | null,
+    day?: number | null,
+  ) => {
+    setEditingEventState(event);
+    setEditingEventDay(day ?? null);
+  };
 
   return (
     <CalendarContext.Provider
@@ -36,6 +51,7 @@ export function CalendarProvider({ children }: WithChildren) {
         currentDate,
         calendarEvents,
         editingEvent,
+        editingEventDay,
         dispatch,
         setCurrentDate,
         setEditingEvent,

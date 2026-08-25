@@ -106,6 +106,7 @@ export default function AppCalendar({
 }: CalendarProps) {
   const {
     editingEvent,
+    editingEventDay,
     currentDate,
     calendarEvents,
     setCurrentDate,
@@ -918,7 +919,9 @@ export default function AppCalendar({
                         }
                         editing={
                           (editingEvent?._instanceId ?? editingEvent?.id) ===
-                          (event._instanceId ?? event.id)
+                            (event._instanceId ?? event.id) &&
+                          (editingEventDay == null ||
+                            editingEventDay === dayIndex)
                         }
                         onPointerDown={onEventPointerDown}
                         onEventEdit={onEventEdit}
@@ -948,6 +951,7 @@ export default function AppCalendar({
       onEventPointerDown,
       startNewEvent,
       editingEvent,
+      editingEventDay,
     ],
   );
 

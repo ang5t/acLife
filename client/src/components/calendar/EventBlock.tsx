@@ -37,7 +37,7 @@ export default memo(
     onEventDelete,
     onDuplicate,
   }: EventBlockProps) {
-    const { setEditingEvent, lastPointer, setLastPointer } = useCalendar();
+    const { setEditingEvent, setLastPointer } = useCalendar();
     const isMobile = useIsMobile();
 
     const { startsToday, endsToday } = useMemo(
@@ -104,7 +104,7 @@ export default memo(
     }, [event.id, event._parent]);
 
     const { handlers: tapHandlers } = useTapInteraction({
-      onTap: () => setTimeout(() => setEditingEvent(event), 50),
+      onTap: () => setTimeout(() => setEditingEvent(event, day), 50),
     });
 
     const handleDelete = useCallback(() => {
@@ -239,7 +239,7 @@ export default memo(
               onContextMenu={(e) => {
                 if (isMobile) e.preventDefault();
               }}
-              onDoubleClick={() => setEditingEvent(event)}
+              onDoubleClick={() => setEditingEvent(event, day)}
               ref={eventRef}
             >
               {!event._continued ? (
@@ -286,7 +286,7 @@ export default memo(
             {/* context menu items */}
             <ContextMenuLabel>{event.title}</ContextMenuLabel>
 
-            <ContextMenuItem onClick={() => setEditingEvent(event)}>
+            <ContextMenuItem onClick={() => setEditingEvent(event, day)}>
               <PencilLine />
               Edit
             </ContextMenuItem>
@@ -319,39 +319,23 @@ export default memo(
           </ContextMenuContent>
         </ContextMenu>
 
-        {(() => {
-          const containsPointer = () => {
-            if (!lastPointer || !eventRef.current) return false;
-            const r = eventRef.current.getBoundingClientRect();
-            return (
-              lastPointer.x >= r.left &&
-              lastPointer.x <= r.right &&
-              lastPointer.y >= r.top &&
-              lastPointer.y <= r.bottom
-            );
-          };
-
-          const showEditor =
-            editing && (!event._continued || containsPointer());
-
-          return showEditor ? (
-            <EventEditor
-              event={event}
-              eventRef={eventRef}
-              onSave={(originalEvent, newEvent) => {
-                onEventEdit(originalEvent, newEvent);
-                setEditingEvent(null);
-              }}
-              onMove={(originalEvent, newEvent) => {
-                onEventMove(originalEvent, newEvent);
-                setEditingEvent(null);
-              }}
-              onDelete={handleDelete}
-              onDuplicate={duplicate}
-              onCancel={() => setEditingEvent(null)}
-            />
-          ) : null;
-        })()}
+        {editing ? (
+          <EventEditor
+            event={event}
+            eventRef={eventRef}
+            onSave={(originalEvent, newEvent) => {
+              onEventEdit(originalEvent, newEvent);
+              setEditingEvent(null);
+            }}
+            onMove={(originalEvent, newEvent) => {
+              onEventMove(originalEvent, newEvent);
+              setEditingEvent(null);
+            }}
+            onDelete={handleDelete}
+            onDuplicate={duplicate}
+            onCancel={() => setEditingEvent(null)}
+          />
+        ) : null}
       </>
     );
   },
