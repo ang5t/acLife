@@ -395,7 +395,7 @@ export default function AppCalendar({
       // nothing changed, so there's nothing to save
       if (eventUnchanged(originalEvent, event)) return;
 
-      if (event._parent || originalEvent.repeat) {
+      if (event._parent || (originalEvent.repeat && event.repeat)) {
         evPendingUpdateRef.current = event;
         setUpdateRepeatDialogOpen(true);
         return;
