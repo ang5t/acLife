@@ -142,6 +142,11 @@ func StripeWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	endpointSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
+	if endpointSecret == "" {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
 	sigHeader := r.Header.Get("Stripe-Signature")
 
 	event, err := webhook.ConstructEventWithOptions(payload, sigHeader, endpointSecret,
