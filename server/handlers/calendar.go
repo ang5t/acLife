@@ -104,8 +104,8 @@ func SaveCalendarEvents(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO calendar_events (id, owner, data, updated_at)
 		VALUES ` + strings.Join(valueStrings, ",") + `
 		ON DUPLICATE KEY UPDATE
-			data = VALUES(data),
-			updated_at = VALUES(updated_at)
+			data = IF(owner = VALUES(owner), VALUES(data), data),
+			updated_at = IF(owner = VALUES(owner), VALUES(updated_at), updated_at)
 		`
 
 		if _, err := tx.ExecContext(ctx, query, valueArgs...); err != nil {
