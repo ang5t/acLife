@@ -264,6 +264,25 @@ export default function AppCalendar({
         if (newEnd <= newStart) {
           newEnd = newStart.plus({ minutes: SNAP_MINS });
         }
+      } else if (state.type === "new") {
+        const anchor = state.originalStart;
+        const pointerTime = anchor.plus({
+          days: dayDelta,
+          minutes: deltaMinutes,
+        });
+        if (pointerTime >= anchor) {
+          newStart = anchor;
+          newEnd = pointerTime;
+          if (newEnd <= newStart) {
+            newEnd = newStart.plus({ minutes: SNAP_MINS });
+          }
+        } else {
+          newStart = pointerTime;
+          newEnd = anchor;
+          if (newStart >= newEnd) {
+            newStart = newEnd.minus({ minutes: SNAP_MINS });
+          }
+        }
       }
 
       // when dragging, label tells the new start/end times and follows the pointer
@@ -534,7 +553,7 @@ export default function AppCalendar({
 
         dragRef.current = {
           pointerId: e.pointerId,
-          type: "resize_end",
+          type: "new",
           startY,
           x: e.clientX,
           y: e.clientY,

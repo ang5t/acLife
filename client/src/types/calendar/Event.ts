@@ -57,7 +57,7 @@ export type RawCalendarEvent = Omit<CalendarEvent, "start" | "end"> & {
 
 export type EventDragRef = {
   pointerId: number;
-  type: "move" | "resize_start" | "resize_end";
+  type: "move" | "resize_start" | "resize_end" | "new";
   startY: number;
   x: number;
   y: number;

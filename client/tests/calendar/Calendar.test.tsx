@@ -543,7 +543,7 @@ describe("Calendar", () => {
     );
   });
 
-  it("resizes event", async () => {
+  it("resizes event end", async () => {
     const saveEvents = vi.fn();
 
     renderCalendar({
@@ -568,6 +568,93 @@ describe("Calendar", () => {
     );
     expect(savedEvents[0].end.toISO()).toBe(
       FIXED_NOW.startOf("day").plus({ hours: 11 }).toISO(),
+    );
+  });
+
+  it("resizes event start", async () => {
+    const saveEvents = vi.fn();
+
+    renderCalendar({
+      mode: "week",
+      events: [buildPlainEvent()],
+      saveEvents,
+    });
+
+    await dragEvent({
+      title: "Planning",
+      source: "resize_start",
+      startX: dayCenterX(2),
+      startY: timeToClientY(9),
+      endX: dayCenterX(2),
+      endY: timeToClientY(8),
+    });
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    expect(savedEvents[0].start.toISO()).toBe(
+      FIXED_NOW.startOf("day").plus({ hours: 8 }).toISO(),
+    );
+    expect(savedEvents[0].end.toISO()).toBe(
+      FIXED_NOW.startOf("day").plus({ hours: 10 }).toISO(),
+    );
+  });
+
+  it("prevents resizing start past end", async () => {
+    const saveEvents = vi.fn();
+
+    renderCalendar({
+      mode: "week",
+      events: [buildPlainEvent()],
+      saveEvents,
+    });
+
+    await dragEvent({
+      title: "Planning",
+      source: "resize_start",
+      startX: dayCenterX(2),
+      startY: timeToClientY(9),
+      endX: dayCenterX(2),
+      endY: timeToClientY(11),
+    });
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    expect(savedEvents[0].start.toISO()).toBe(
+      FIXED_NOW.startOf("day")
+        .plus({ hours: 10 })
+        .minus({ minutes: 5 })
+        .toISO(),
+    );
+    expect(savedEvents[0].end.toISO()).toBe(
+      FIXED_NOW.startOf("day").plus({ hours: 10 }).toISO(),
+    );
+  });
+
+  it("prevents resizing end past start", async () => {
+    const saveEvents = vi.fn();
+
+    renderCalendar({
+      mode: "week",
+      events: [buildPlainEvent()],
+      saveEvents,
+    });
+
+    await dragEvent({
+      title: "Planning",
+      source: "resize_end",
+      startX: dayCenterX(2),
+      startY: timeToClientY(10),
+      endX: dayCenterX(2),
+      endY: timeToClientY(8),
+    });
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    expect(savedEvents[0].start.toISO()).toBe(
+      FIXED_NOW.startOf("day").plus({ hours: 9 }).toISO(),
+    );
+    expect(savedEvents[0].end.toISO()).toBe(
+      FIXED_NOW.startOf("day").plus({ hours: 9 }).plus({ minutes: 5 }).toISO(),
     );
   });
 
