@@ -19,6 +19,14 @@ vi.mock("../../src/components/ui/sidebar.tsx", () => {
   };
 });
 
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    promise: vi.fn(),
+  },
+}));
+
 import AppCalendar from "../../src/components/calendar/Calendar.tsx";
 import { CalendarProvider } from "../../src/context/CalendarContext.tsx";
 import type { CalendarEvent } from "../../src/types/calendar/Event.ts";
@@ -462,6 +470,8 @@ describe("Calendar", () => {
     });
 
     await openEventEditor(user, "Planning");
+
+    // necessary at the moment because double clicking triggers save, remove when fixed
     await advanceSave();
     saveEvents.mockClear();
 
@@ -680,7 +690,6 @@ describe("Calendar", () => {
     await advanceSave();
 
     expect(await screen.findByText("One-off standup")).toBeInTheDocument();
-    expect(screen.queryByText("Daily standup")).not.toBeInTheDocument();
 
     const savedEvents = getLastSavedEvents(saveEvents);
     expect(savedEvents).toHaveLength(2);
@@ -692,7 +701,7 @@ describe("Calendar", () => {
       (event) => event.id !== "repeat-parent",
     );
 
-    expect(parentEvent?.title).toBe("One-off standup");
+    expect(parentEvent?.title).toBe("Daily standup");
     expect(parentEvent?.start.toISO()).toBe(
       FIXED_NOW.startOf("day").plus({ days: 1, hours: 8 }).toISO(),
     );
@@ -783,6 +792,148 @@ describe("Calendar", () => {
     expect(getLastSavedEvents(saveEvents)).toHaveLength(0);
   });
 
+  it("deletes future recurring instances from parent", async () => {
+    const saveEvents = vi.fn();
+    const { user } = renderCalendar({
+      mode: "week",
+      events: [buildRecurringEvent()],
+      saveEvents,
+    });
+
+    await openEventMenu(user, "Daily standup");
+    await user.click(await screen.findByRole("menuitem", { name: /delete/i }));
+
+    expect(
+      await screen.findByText(/delete recurring event/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /future events/i }));
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    expect(savedEvents).toHaveLength(0);
+  });
+
+  it("deletes parent occurrence with 'this' skips already-skipped dates", async () => {
+    const saveEvents = vi.fn();
+    const parentStart = FIXED_NOW.startOf("week").plus({ days: 2, hours: 8 });
+    const skipDate = parentStart.plus({ days: 1 }).toUTC().toISODate()!;
+
+    const { user } = renderCalendar({
+      mode: "week",
+      events: [
+        buildRecurringEvent({
+          repeat: {
+            interval: 1,
+            unit: "day" as const,
+            skip: [skipDate],
+          },
+        }),
+      ],
+      saveEvents,
+    });
+
+    await openEventMenu(user, "Daily standup");
+    await user.click(await screen.findByRole("menuitem", { name: /delete/i }));
+
+    expect(
+      await screen.findByText(/delete recurring event/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /this event/i }));
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    expect(savedEvents).toHaveLength(1);
+
+    const parent = savedEvents[0];
+    expect(parent.id).toBe("repeat-parent");
+    expect(parent.start.toISO()).toBe(
+      FIXED_NOW.startOf("week").plus({ days: 4, hours: 8 }).toISO(),
+    );
+  });
+
+  it("duplicate of recurring instance strips repeat fields", async () => {
+    const saveEvents = vi.fn();
+    const { user } = renderCalendar({
+      mode: "week",
+      events: [buildRecurringEvent()],
+      saveEvents,
+    });
+
+    await openEventMenu(user, "Daily standup");
+    await user.click(
+      await screen.findByRole("menuitem", { name: /duplicate/i }),
+    );
+
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    expect(savedEvents).toHaveLength(2);
+
+    const duplicated = savedEvents.find((e) => e.id !== "repeat-parent");
+    expect(duplicated?.repeat).toBeUndefined();
+    expect(duplicated?._parent).toBeUndefined();
+    expect(duplicated?._instanceId).toBeUndefined();
+  });
+
+  it("cancel on recurring dialog after drag resets refs", async () => {
+    const saveEvents = vi.fn();
+    const { user } = renderCalendar({
+      mode: "week",
+      events: [buildRecurringEvent()],
+      saveEvents,
+    });
+
+    await dragEvent({
+      title: "Daily standup",
+      startX: dayCenterX(2),
+      startY: timeToClientY(8),
+      endX: dayCenterX(2),
+      endY: timeToClientY(9),
+    });
+
+    expect(
+      await screen.findByText(/update recurring event/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+    await advanceSave();
+
+    expect(saveEvents).not.toHaveBeenCalled();
+
+    await dragEvent({
+      title: "Daily standup",
+      startX: dayCenterX(2),
+      startY: timeToClientY(8),
+      endX: dayCenterX(4),
+      endY: timeToClientY(10),
+    });
+
+    expect(
+      await screen.findByText(/update recurring event/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /this event/i }));
+    await user.click(screen.getByRole("button", { name: /^update$/i }));
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    expect(savedEvents).toHaveLength(2);
+
+    const parent = savedEvents.find((e) => e.id === "repeat-parent");
+    const detached = savedEvents.find((e) => e.id !== "repeat-parent");
+
+    expect(parent?.start.toISO()).toBe(
+      FIXED_NOW.startOf("week").plus({ days: 3, hours: 8 }).toISO(),
+    );
+    expect(detached?.start.toISO()).toBe(
+      FIXED_NOW.startOf("week").plus({ days: 4, hours: 10 }).toISO(),
+    );
+  });
+
   it("shows same event date and time in day and week views", async () => {
     const timedEvent = buildEvent({
       title: "Review",
@@ -850,19 +1001,28 @@ describe("moveHelpers", () => {
       end: FIXED_NOW.startOf("day").plus({ hours: 10 }),
     });
 
-    const conflict = buildEvent({
-      id: "conflict",
-      start: FIXED_NOW.startOf("day").plus({ hours: 10 }),
-      end: FIXED_NOW.startOf("day").plus({ hours: 11 }),
-    });
+    const conflicts: CalendarEvent[] = [];
+    for (let i = 0; i < 10; i++) {
+      conflicts.push(
+        buildEvent({
+          id: `conflict${i}`,
+          start: FIXED_NOW.startOf("day").plus({ hours: i + 9 }),
+          end: FIXED_NOW.startOf("day").plus({ hours: i + 10 }),
+        }),
+      );
+    }
 
-    const slot = findFreeSlotForEvent([target, conflict], target, "forward");
+    const slot = findFreeSlotForEvent(
+      [target, ...conflicts],
+      target,
+      "forward",
+    );
     expect(slot).not.toBeNull();
     expect(slot?.start.toISO()).toBe(
-      FIXED_NOW.startOf("day").plus({ hours: 11 }).toISO(),
+      FIXED_NOW.startOf("day").plus({ hours: 19 }).toISO(),
     );
     expect(slot?.end.toISO()).toBe(
-      FIXED_NOW.startOf("day").plus({ hours: 12 }).toISO(),
+      FIXED_NOW.startOf("day").plus({ hours: 20 }).toISO(),
     );
   });
 
@@ -873,20 +1033,27 @@ describe("moveHelpers", () => {
       end: FIXED_NOW.startOf("day").plus({ hours: 10 }),
     });
 
-    const conflict = buildEvent({
-      id: "conflict2",
-      start: FIXED_NOW.startOf("day").plus({ hours: 8 }),
-      end: FIXED_NOW.startOf("day").plus({ hours: 9 }),
-    });
+    const conflicts: CalendarEvent[] = [];
 
-    const slot = findFreeSlotForEvent([target, conflict], target, "backward");
+    for (let i = 0; i < 10; i++) {
+      const conflict = buildEvent({
+        id: `conflict${i}`,
+        start: FIXED_NOW.startOf("day").plus({ hours: i }),
+        end: FIXED_NOW.startOf("day").plus({ hours: i + 1 }),
+      });
+      conflicts.push(conflict);
+    }
+
+    const slot = findFreeSlotForEvent(
+      [target, ...conflicts],
+      target,
+      "backward",
+    );
     expect(slot).not.toBeNull();
     expect(slot?.start.toISO()).toBe(
-      FIXED_NOW.startOf("day").plus({ hours: 7 }).toISO(),
+      FIXED_NOW.startOf("day").minus({ hours: 1 }).toISO(),
     );
-    expect(slot?.end.toISO()).toBe(
-      FIXED_NOW.startOf("day").plus({ hours: 8 }).toISO(),
-    );
+    expect(slot?.end.toISO()).toBe(FIXED_NOW.startOf("day").toISO());
   });
 
   it("findFreeSlotForEvent respects repeating events occurrences", () => {
@@ -898,8 +1065,8 @@ describe("moveHelpers", () => {
 
     const repeating = buildEvent({
       id: "repeat-parent",
-      start: FIXED_NOW.startOf("week").plus({ days: 2, hours: 10 }),
-      end: FIXED_NOW.startOf("week").plus({ days: 2, hours: 11 }),
+      start: FIXED_NOW.startOf("week").plus({ days: 1, hours: 10 }),
+      end: FIXED_NOW.startOf("week").plus({ days: 1, hours: 11 }),
       repeat: { interval: 1, unit: "day" as const },
     });
 
