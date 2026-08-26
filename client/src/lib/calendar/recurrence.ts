@@ -12,11 +12,11 @@ export function detachSingleOccurrence(
   updateChange: (change: EventChange) => void,
 ) {
   const isParent = !event._parent && !!event.repeat;
-  const parent = isParent
-    ? event
-    : calendarEvents.find((e) => e.id === event._parent);
+  const parentId = isParent ? event.id : event._parent;
 
-  if (!parent?.repeat) {
+  const originalParent = calendarEvents.find((e) => e.id === parentId);
+
+  if (!originalParent?.repeat) {
     dispatch({ type: "update", id: event.id, data: event });
     updateChange({ type: "updated", event });
     return;
@@ -28,15 +28,15 @@ export function detachSingleOccurrence(
     timestamp: Date.now(),
   } as CalendarEvent;
 
+  const parent = { ...originalParent };
+
   if (isParent) {
     // move parent to its next occurrence, skipping excluded weekdays/dates
-    const interval = { [parent.repeat.unit]: parent.repeat.interval };
-    const skip = new Set(parent.repeat.skip);
-    const except = new Set(parent.repeat.except);
-
+    const interval = { [parent.repeat!.unit]: parent.repeat!.interval };
+    const skip = new Set(parent.repeat!.skip);
+    const except = new Set(parent.repeat!.except);
     let nextStart = originalStart.plus(interval);
     let nextEnd = originalEnd.plus(interval);
-
     while (
       skip.has(nextStart.toUTC().toISODate()!) ||
       except.has(nextStart.toUTC().weekday)
@@ -44,13 +44,17 @@ export function detachSingleOccurrence(
       nextStart = nextStart.plus(interval);
       nextEnd = nextEnd.plus(interval);
     }
-
     parent.start = nextStart;
     parent.end = nextEnd;
   } else {
     // skip this occurrence on the parent
-    if (!parent.repeat.skip) parent.repeat.skip = [];
-    parent.repeat.skip.push(originalStart.toUTC().toISODate()!);
+    parent.repeat = {
+      ...parent.repeat!,
+      skip: [
+        ...(parent.repeat!.skip ?? []),
+        originalStart.toUTC().toISODate()!,
+      ],
+    };
   }
 
   updateChange({ type: "updated", event: parent });
