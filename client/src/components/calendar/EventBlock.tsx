@@ -220,6 +220,8 @@ export default memo(
               style={blockStyle}
               onPointerDown={useCallback(
                 (e: React.PointerEvent) => {
+                  if ((e.target as HTMLElement).closest(".resize-handle"))
+                    return;
                   setLastPointer({ x: e.clientX, y: e.clientY });
 
                   if (e.pointerType === "touch") handleTouchPointerDown(e);
@@ -266,7 +268,7 @@ export default memo(
               {/* handles for resizing */}
               {startsToday && (
                 <div
-                  className="hidden md:block absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-background/20"
+                  className="hidden md:block absolute resize-handle top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-background/20"
                   onPointerDown={(e) =>
                     onPointerDown(e, "resize_start", event, day)
                   }
@@ -274,7 +276,7 @@ export default memo(
               )}
               {endsToday && (
                 <div
-                  className="hidden md:block absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-background/20"
+                  className="hidden md:block absolute resize-handle bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-background/20"
                   onPointerDown={(e) =>
                     onPointerDown(e, "resize_end", event, day)
                   }

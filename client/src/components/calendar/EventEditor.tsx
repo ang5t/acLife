@@ -304,7 +304,6 @@ export default function EventEditor({
         top: pos.top,
         left: pos.left,
       }}
-      onPointerDown={(e) => e.stopPropagation()}
       ref={editorRef}
     >
       <div className="flex justify-between mb-5 items-center">

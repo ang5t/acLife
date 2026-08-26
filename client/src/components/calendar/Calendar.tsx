@@ -382,7 +382,6 @@ export default function AppCalendar({
       if (!container) return;
 
       e.preventDefault();
-      e.stopPropagation();
       setIsDragging(true);
 
       dragRef.current = {
