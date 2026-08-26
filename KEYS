@@ -1,0 +1,105 @@
+acLife Release Signing Key
+==========================
+
+This key is used to sign official acLife release artifacts.
+
+Fingerprint:
+
+    0752 974F 303C 1E0B 2F91 4A06 7950 BE13 52DC 8C8B
+
+Before trusting this key, verify that the fingerprint above matches
+the fingerprint published through an independent, trusted source.
+Do not rely solely on a copy of this file obtained from the same
+location as the release, as that source may have been compromised.
+
+Importing the key
+-----------------
+
+To import this key into your GnuPG keyring:
+
+    gpg --import KEYS
+
+After importing it, verify the fingerprint:
+
+    gpg --fingerprint 7950BE1352DC8C8B
+
+Confirm that the fingerprint is:
+
+    0752 974F 303C 1E0B 2F91 4A06 7950 BE13 52DC 8C8B
+
+Verifying a release
+-------------------
+
+Official release artifacts are accompanied by OpenPGP signatures.
+
+For example, to verify an AppImage:
+
+    gpg --verify acLife_0.0.1_amd64.AppImage.asc acLife_0.0.1_amd64.AppImage
+
+To verify an executable:
+
+    gpg --verify aclife-desktop.asc aclife-desktop
+
+A successful verification should report <Good signature> and identify
+the signer as acLife Release <aclife@atrxis.com>.
+
+Note that a valid signature only establishes that the artifact was
+signed by the corresponding private key. You should verify the key's
+fingerprint through a trusted, independent source before relying on
+the signature.
+
+Public key
+----------
+
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+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
+MsSaYQlQf3vO/Ups2w==
+=TeOI
+-----END PGP PUBLIC KEY BLOCK-----

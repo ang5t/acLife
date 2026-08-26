@@ -1,0 +1,213 @@
+name: Build and Sign Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SIGNING_KEY_ID: "7950BE1352DC8C8B"
+  SIGNING_KEY_FINGERPRINT: "0752974F303C1E0B2F914A067950BE1352DC8C8B"
+
+jobs:
+  build-and-sign:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev
+
+      - name: Install dependencies
+        working-directory: client
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri app
+        working-directory: client
+        run: pnpm exec tauri build
+
+      - name: Import release signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          export GNUPGHOME="${RUNNER_TEMP}/gnupg"
+          mkdir -m 700 -p "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+
+          echo "allow-loopback-pinentry" > "$GNUPGHOME/gpg-agent.conf"
+          gpgconf --kill gpg-agent || true
+
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+          imported_fpr=$(gpg --batch --with-colons --fingerprint "$SIGNING_KEY_ID" \
+            | awk -F: '/^fpr:/ { print $10; exit }')
+
+          if [ "$imported_fpr" != "$SIGNING_KEY_FINGERPRINT" ]; then
+            echo "::error::Imported key fingerprint ($imported_fpr) does not match expected ($SIGNING_KEY_FINGERPRINT)"
+            exit 1
+          fi
+
+          echo "Imported and verified signing key $SIGNING_KEY_FINGERPRINT"
+
+      - name: Sign release artifacts
+        working-directory: client/src-tauri
+        run: |
+          set -euo pipefail
+
+          sign() {
+            local file="$1"
+            echo "Signing: $file"
+            gpg \
+              --batch --yes \
+              --local-user "$SIGNING_KEY_ID" \
+              --armor --detach-sign \
+              "$file"
+          }
+
+          sign_glob() {
+            local pattern="$1"
+            local matched=0
+            for file in $pattern; do
+              [ -e "$file" ] || continue
+              sign "$file"
+              matched=1
+            done
+            if [ "$matched" -eq 0 ]; then
+              echo "::error::No files matched pattern: $pattern"
+              exit 1
+            fi
+          }
+
+          sign "target/release/aclife-desktop"
+          sign_glob "target/release/bundle/deb/*.deb"
+          sign_glob "target/release/bundle/rpm/*.rpm"
+          sign_glob "target/release/bundle/appimage/*.AppImage"
+
+      - name: Generate and sign checksums
+        working-directory: client/src-tauri
+        run: |
+          set -euo pipefail
+
+          artifacts=(
+            "target/release/aclife-desktop"
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
+          )
+
+          : > SHA256SUMS
+          for f in "${artifacts[@]}"; do
+            [ -e "$f" ] || continue
+            sha256sum "$f" >> SHA256SUMS
+          done
+
+          cat SHA256SUMS
+
+          gpg \
+            --batch --yes \
+            --local-user "$SIGNING_KEY_ID" \
+            --armor --detach-sign \
+            SHA256SUMS
+
+      - name: Verify signatures
+        working-directory: client/src-tauri
+        run: |
+          set -euo pipefail
+
+          verify() {
+            local file="$1"
+            echo "Verifying: $file"
+            gpg --batch --verify "$file.asc" "$file"
+          }
+
+          verify "target/release/aclife-desktop"
+          for f in target/release/bundle/deb/*.deb \
+                   target/release/bundle/rpm/*.rpm \
+                   target/release/bundle/appimage/*.AppImage; do
+            [ -e "$f" ] || continue
+            verify "$f"
+          done
+
+          verify "SHA256SUMS"
+          sha256sum -c SHA256SUMS
+
+      - name: Remove imported private key
+        if: always()
+        run: |
+          gpg --batch --yes --delete-secret-keys "$SIGNING_KEY_ID" || true
+          rm -rf "${GNUPGHOME:-}"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-release
+          path: |
+            client/src-tauri/target/release/aclife-desktop
+            client/src-tauri/target/release/aclife-desktop.asc
+            client/src-tauri/target/release/bundle/deb/*.deb
+            client/src-tauri/target/release/bundle/deb/*.deb.asc
+            client/src-tauri/target/release/bundle/rpm/*.rpm
+            client/src-tauri/target/release/bundle/rpm/*.rpm.asc
+            client/src-tauri/target/release/bundle/appimage/*.AppImage
+            client/src-tauri/target/release/bundle/appimage/*.AppImage.asc
+            client/src-tauri/SHA256SUMS
+            client/src-tauri/SHA256SUMS.asc
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: acLife ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            client/src-tauri/target/release/aclife-desktop
+            client/src-tauri/target/release/aclife-desktop.asc
+            client/src-tauri/target/release/bundle/deb/*.deb
+            client/src-tauri/target/release/bundle/deb/*.deb.asc
+            client/src-tauri/target/release/bundle/rpm/*.rpm
+            client/src-tauri/target/release/bundle/rpm/*.rpm.asc
+            client/src-tauri/target/release/bundle/appimage/*.AppImage
+            client/src-tauri/target/release/bundle/appimage/*.AppImage.asc
+            client/src-tauri/SHA256SUMS
+            client/src-tauri/SHA256SUMS.asc
