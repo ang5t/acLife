@@ -73,6 +73,32 @@ const eventUnchanged = (a: CalendarEvent, b: CalendarEvent) =>
   a.end.toMillis() === b.end.toMillis() &&
   repeatEqual(a.repeat, b.repeat);
 
+const withTimeOfDay = (date: DateTime, time: DateTime) =>
+  date.set({
+    hour: time.hour,
+    minute: time.minute,
+    second: time.second,
+    millisecond: time.millisecond,
+  });
+
+const applyBatchField = (
+  base: DateTime,
+  edited: DateTime,
+  dateChanged: boolean,
+  timeChanged: boolean,
+) => {
+  if (dateChanged && timeChanged) return edited;
+  if (timeChanged) return withTimeOfDay(base, edited);
+  if (dateChanged) {
+    return base.set({
+      year: edited.year,
+      month: edited.month,
+      day: edited.day,
+    });
+  }
+  return base;
+};
+
 /* -------------------------------------------------------------------------- */
 
 const GRID_HEADER_HEIGHT = 48;
@@ -241,7 +267,7 @@ export default function AppCalendar({
   const [updateRepeatDialogOpen, setUpdateRepeatDialogOpen] = useState(false);
   const [deleteRepeatDialogOpen, setDeleteRepeatDialogOpen] = useState(false);
   const [now, setNow] = useState(DateTime.now());
-  const [renderTick, forceRender] = useState(false);
+  const [renderTick, forceRender] = useState(0);
   const changesMapRef = useRef<Map<string, EventChange[]>>(new Map());
   const pendingSaveRef = useRef<null | number>(null);
   const { user, masterKey } = useUser();
@@ -414,7 +440,7 @@ export default function AppCalendar({
 
       if (changed) {
         state.moved = true;
-        forceRender((prev) => !prev);
+        forceRender((tick) => tick + 1);
       }
     },
     [visibleDays, hourHeight],
@@ -566,7 +592,7 @@ export default function AppCalendar({
         selectEvents([...state.base, ...boxed]);
       }
 
-      forceRender((prev) => !prev);
+      forceRender((tick) => tick + 1);
     },
     [selectEvents],
   );
@@ -579,7 +605,7 @@ export default function AppCalendar({
       if (!state.moved && state.toggle) toggleSelection(state.toggle);
 
       selectionBoxRef.current = null;
-      forceRender((prev) => !prev);
+      forceRender((tick) => tick + 1);
 
       window.removeEventListener("pointermove", onSelectionPointerMove);
       window.removeEventListener("pointerup", onSelectionPointerUp);
@@ -698,8 +724,22 @@ export default function AppCalendar({
       const batch = getBatch(originalEvent);
 
       if (batch) {
-        const startShift = event.start.diff(originalEvent.start);
-        const endShift = event.end.diff(originalEvent.end);
+        const originalKey = eventKey(originalEvent);
+        const startDateChanged = !event.start.hasSame(
+          originalEvent.start,
+          "day",
+        );
+        const startTimeChanged =
+          event.start.hour !== originalEvent.start.hour ||
+          event.start.minute !== originalEvent.start.minute ||
+          event.start.second !== originalEvent.start.second ||
+          event.start.millisecond !== originalEvent.start.millisecond;
+        const endDateChanged = !event.end.hasSame(originalEvent.end, "day");
+        const endTimeChanged =
+          event.end.hour !== originalEvent.end.hour ||
+          event.end.minute !== originalEvent.end.minute ||
+          event.end.second !== originalEvent.end.second ||
+          event.end.millisecond !== originalEvent.end.millisecond;
 
         const patch: Partial<CalendarEvent> = {};
         if (event.title !== originalEvent.title) patch.title = event.title;
@@ -714,11 +754,27 @@ export default function AppCalendar({
         let working = calendarEventsRef.current;
 
         for (const ev of batch) {
+          const isEdited = eventKey(ev) === originalKey;
+
           const next = {
             ...ev,
             ...patch,
-            start: ev.start.plus(startShift),
-            end: ev.end.plus(endShift),
+            start: isEdited
+              ? event.start
+              : applyBatchField(
+                  ev.start,
+                  event.start,
+                  startDateChanged,
+                  startTimeChanged,
+                ),
+            end: isEdited
+              ? event.end
+              : applyBatchField(
+                  ev.end,
+                  event.end,
+                  endDateChanged,
+                  endTimeChanged,
+                ),
             timestamp: Date.now(),
           };
 
@@ -1039,7 +1095,7 @@ export default function AppCalendar({
       gridTouchRef.current.delta.x = 0;
 
     gridTouchRef.current.raf = requestAnimationFrame(() =>
-      forceRender((prev) => !prev),
+      forceRender((tick) => tick + 1),
     );
   }, []);
 
@@ -1058,7 +1114,7 @@ export default function AppCalendar({
       cancelAnimationFrame(gridTouchRef.current.raf);
 
     gridTouchRef.current = null;
-    forceRender((prev) => !prev);
+    forceRender((tick) => tick + 1);
   }, [move]);
 
   /* -------------------------------------------------------------------------- */

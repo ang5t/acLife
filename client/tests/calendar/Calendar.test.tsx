@@ -172,6 +172,24 @@ const openEventMenu = async (
   });
 };
 
+const pickCalendarDate = async (
+  user: ReturnType<typeof userEvent.setup>,
+  trigger: HTMLElement,
+  target: DateTime,
+) => {
+  await user.click(trigger);
+
+  const dayButton = await waitFor(() => {
+    const el = document.querySelector(
+      `[data-day="${target.toISODate()}"] button`,
+    ) as HTMLElement | null;
+    expect(el).toBeTruthy();
+    return el!;
+  });
+
+  await user.click(dayButton);
+};
+
 const ctrlClick = (block: Element, clientX = 0, clientY = 0) => {
   act(() => {
     fireEvent.pointerDown(block, {
@@ -361,7 +379,8 @@ const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 
 beforeEach(() => {
   Settings.now = () => FIXED_NOW.toMillis();
-  vi.spyOn(Date, "now").mockReturnValue(FIXED_NOW.toMillis());
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(FIXED_NOW.toJSDate());
 
   Element.prototype.hasPointerCapture = () => false;
   window.HTMLElement.prototype.scrollIntoView = () => {};
@@ -412,6 +431,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   Settings.now = () => Date.now();
 });
 
@@ -1295,6 +1315,147 @@ describe("Calendar", () => {
     );
   });
 
+  it("changing only the time keeps every selected event on its own day", async () => {
+    const saveEvents = vi.fn();
+    const retroDay = FIXED_NOW.startOf("day").plus({ days: 1 });
+    const { user } = renderCalendar({
+      mode: "week",
+      events: [
+        buildPlainEvent(),
+        buildEvent({
+          id: "second-event",
+          title: "Retro",
+          description: undefined,
+          start: retroDay.plus({ hours: 13 }),
+          end: retroDay.plus({ hours: 14 }),
+        }),
+      ],
+      saveEvents,
+    });
+
+    await ctrlClickEvent("Planning");
+    await ctrlClickEvent("Retro");
+
+    await openEventEditor(user, "Planning");
+
+    fireEvent.change(screen.getByDisplayValue("09:00"), {
+      target: { value: "03:00" },
+    });
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    const planning = savedEvents.find((e) => e.id === "plain-event");
+    const retro = savedEvents.find((e) => e.id === "second-event");
+
+    expect(planning?.start.toFormat("HH:mm")).toBe("03:00");
+    expect(retro?.start.toFormat("HH:mm")).toBe("03:00");
+
+    expect(retro?.start.hasSame(retroDay, "day")).toBe(true);
+    expect(retro?.end.toFormat("HH:mm")).toBe("14:00");
+  });
+
+  it("changing only the date moves every selected event to that date, keeping each event's own time", async () => {
+    const saveEvents = vi.fn();
+    const retroDay = FIXED_NOW.startOf("day").plus({ days: 1 });
+    const targetDay = FIXED_NOW.startOf("day").plus({ days: 7 });
+    const { user } = renderCalendar({
+      mode: "week",
+      events: [
+        buildPlainEvent(),
+        buildEvent({
+          id: "second-event",
+          title: "Retro",
+          description: undefined,
+          start: retroDay.plus({ hours: 13 }),
+          end: retroDay.plus({ hours: 14 }),
+        }),
+      ],
+      saveEvents,
+    });
+
+    await ctrlClickEvent("Planning");
+    await ctrlClickEvent("Retro");
+
+    await openEventEditor(user, "Planning");
+
+    const [startDateButton, endDateButton] = screen.getAllByRole("button", {
+      name: "18 Mar 2026",
+    });
+
+    await pickCalendarDate(user, startDateButton, targetDay);
+    await pickCalendarDate(user, endDateButton, targetDay);
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    const planning = savedEvents.find((e) => e.id === "plain-event");
+    const retro = savedEvents.find((e) => e.id === "second-event");
+
+    expect(planning?.start.hasSame(targetDay, "day")).toBe(true);
+    expect(planning?.start.toFormat("HH:mm")).toBe("09:00");
+    expect(planning?.end.toFormat("HH:mm")).toBe("10:00");
+
+    expect(retro?.start.hasSame(targetDay, "day")).toBe(true);
+    expect(retro?.start.toFormat("HH:mm")).toBe("13:00");
+    expect(retro?.end.hasSame(targetDay, "day")).toBe(true);
+    expect(retro?.end.toFormat("HH:mm")).toBe("14:00");
+  });
+
+  it("changing both date and time moves every selected event to that exact date and time", async () => {
+    const saveEvents = vi.fn();
+    const retroDay = FIXED_NOW.startOf("day").plus({ days: 1 });
+    const targetDay = FIXED_NOW.startOf("day").plus({ days: 2 });
+    const { user } = renderCalendar({
+      mode: "week",
+      events: [
+        buildPlainEvent(),
+        buildEvent({
+          id: "second-event",
+          title: "Retro",
+          description: undefined,
+          start: retroDay.plus({ hours: 13 }),
+          end: retroDay.plus({ hours: 14 }),
+        }),
+      ],
+      saveEvents,
+    });
+
+    await ctrlClickEvent("Planning");
+    await ctrlClickEvent("Retro");
+
+    await openEventEditor(user, "Planning");
+
+    const [startDateButton, endDateButton] = screen.getAllByRole("button", {
+      name: "18 Mar 2026",
+    });
+
+    await pickCalendarDate(user, startDateButton, targetDay);
+    await pickCalendarDate(user, endDateButton, targetDay);
+
+    fireEvent.change(screen.getByDisplayValue("09:00"), {
+      target: { value: "03:00" },
+    });
+    fireEvent.change(screen.getByDisplayValue("10:00"), {
+      target: { value: "04:00" },
+    });
+
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+    await advanceSave();
+
+    const savedEvents = getLastSavedEvents(saveEvents);
+    const planning = savedEvents.find((e) => e.id === "plain-event");
+    const retro = savedEvents.find((e) => e.id === "second-event");
+
+    expect(planning?.start.toISO()).toBe(targetDay.plus({ hours: 3 }).toISO());
+    expect(planning?.end.toISO()).toBe(targetDay.plus({ hours: 4 }).toISO());
+
+    expect(retro?.start.toISO()).toBe(planning?.start.toISO());
+    expect(retro?.end.toISO()).toBe(planning?.end.toISO());
+  });
+
   it("selects only the events the box covers", async () => {
     renderCalendar({
       mode: "week",
@@ -1326,6 +1487,41 @@ describe("Calendar", () => {
     expect(box!.style.height).toBe(`${timeToClientY(12) - timeToClientY(8)}px`);
 
     endSelectionBox({ x: dayCenterX(4), y: timeToClientY(12) });
+
+    expect(getSelectionBox()).toBeNull();
+  });
+
+  it("removes selection box when pointermove and pointerup land in the same batch", () => {
+    renderCalendar({ mode: "week", events: [buildPlainEvent()] });
+
+    startSelectionBox({ x: dayCenterX(2), y: timeToClientY(8) });
+    moveSelectionBox({ x: dayCenterX(4), y: timeToClientY(12) });
+    expect(getSelectionBox()).toBeTruthy();
+
+    const release = { x: dayCenterX(4) + 1, y: timeToClientY(12) };
+    act(() => {
+      window.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: "mouse",
+          ctrlKey: true,
+          clientX: release.x,
+          clientY: release.y,
+        }),
+      );
+
+      window.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          pointerId: 1,
+          pointerType: "mouse",
+          ctrlKey: true,
+          clientX: release.x,
+          clientY: release.y,
+        }),
+      );
+    });
 
     expect(getSelectionBox()).toBeNull();
   });
